@@ -23,6 +23,7 @@ import uvicorn
 from ..ai.receptionist import receptionist, CallContext, CallOutcome
 from ..database.supabase_client import db
 from ..voice_handler import voice_handler
+from .notifications import send_followup_email
 
 # Create FastAPI app
 app = FastAPI(
@@ -131,6 +132,38 @@ async def gather_response(request: Request):
                     print("Booking-link SMS NOT sent: BOOKING_URL env var is empty")
         except Exception as sms_err:
             print(f"SMS booking link error: {repr(sms_err)}")
+
+        # Save & email a follow-up / callback request if the AI flagged it.
+        # NOTE: This feature is disabled by default. Set FOLLOWUP_ENABLED = True
+        # (and configure the follow_ups table + Gmail env vars) to activate it.
+        # All logic is wrapped so it can never affect the live call.
+        FOLLOWUP_ENABLED = False
+        try:
+            wants_followup = FOLLOWUP_ENABLED and getattr(call_context, "needs_followup", False)
+            already_followup = getattr(session, "followup_saved", False)
+            print(f"Follow-up check: needs={wants_followup} already_saved={already_followup} caller={caller_number}")
+            if wants_followup and not already_followup:
+                # Mark immediately so we only ever create one record per call.
+                session.followup_saved = True
+                followup_record = {
+                    "caller_name": getattr(call_context.client_info, "name", None),
+                    "caller_phone": caller_number if caller_number not in ("unknown", "") else None,
+                    "summary": getattr(call_context, "followup_summary", None) or speech_result,
+                    "service_interest": getattr(call_context, "followup_service", None),
+                    "preferred_callback_time": getattr(call_context, "preferred_callback_time", None),
+                    "request_type": "callback",
+                    "call_sid": call_sid,
+                    "status": "pending",
+                    "email_sent": False,
+                }
+                # Save to Supabase FIRST so the request is durable even if email fails.
+                saved = await db.create_followup(followup_record)
+                print(f"Follow-up saved to Supabase: {bool(saved)}")
+                # Then send the email notification (failure here never breaks the call).
+                email_ok = send_followup_email(followup_record)
+                print(f"Follow-up email result: {email_ok}")
+        except Exception as followup_err:
+            print(f"Follow-up handling error: {repr(followup_err)}")
 
         # Decide whether the call should end
         outcome = getattr(call_context, "outcome", None)
