@@ -124,8 +124,12 @@ class ConnectionManager:
         # Create call context
         self.call_contexts[call_sid] = CallContext(caller_number="unknown")
 
-        # Start with greeting
-        greeting = "Hi there! Welcome to Lash Zone London. I'm Luna, your AI assistant, here to help you 24/7. How can I assist you today? I can help with booking appointments, answer questions about our services, or provide directions to our studio."
+        # Generate greeting through AI for comprehensive response
+        greeting_context = CallContext(caller_number="unknown")
+        greeting = await receptionist.generate_response(
+            greeting_context,
+            "Hello, introduce yourself and offer help"
+        )
 
         # Generate greeting audio
         audio_response = await receptionist.generate_speech(greeting)
