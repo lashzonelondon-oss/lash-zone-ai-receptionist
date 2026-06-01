@@ -8,7 +8,6 @@ import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 from supabase import create_client, Client
-from supabase.lib.client_options import ClientOptions
 
 # Supabase configuration
 supabase_url = os.environ.get("SUPABASE_URL")
