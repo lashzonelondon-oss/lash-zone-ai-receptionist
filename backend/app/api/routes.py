@@ -137,7 +137,7 @@ async def gather_response(request: Request):
         # NOTE: This feature is disabled by default. Set FOLLOWUP_ENABLED = True
         # (and configure the follow_ups table + Gmail env vars) to activate it.
         # All logic is wrapped so it can never affect the live call.
-        FOLLOWUP_ENABLED = False
+        FOLLOWUP_ENABLED = True
         try:
             wants_followup = FOLLOWUP_ENABLED and getattr(call_context, "needs_followup", False)
             already_followup = getattr(session, "followup_saved", False)
