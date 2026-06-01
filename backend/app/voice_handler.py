@@ -29,6 +29,7 @@ class TwilioVoiceHandler:
     def __init__(self):
         self.active_calls: Dict[str, CallSession] = {}
         self.studio_name = os.environ.get("STUDIO_NAME", "Lash Zone London")
+        self._receptionist = None  # Set by startup via set_receptionist()
         self.base_url = os.environ.get("BASE_URL", "https://talented-fulfillment-production-8f33.up.railway.app")
 
     def get_incoming_call_twiml(self) -> str:
@@ -48,7 +49,11 @@ class TwilioVoiceHandler:
         """Alias for get_incoming_call_twiml - called by routes.py webhook handler"""
         return self.get_incoming_call_twiml()
 
-    def get_or_create_session(self, call_sid: str, caller_number: str) -> CallSession:
+    def set_receptionist(self, receptionist):
+        """Set the AI receptionist instance (called from startup)"""
+        self._receptionist = receptionist
+
+        def get_or_create_session(self, call_sid: str, caller_number: str) -> CallSession:
         if call_sid not in self.active_calls:
             self.active_calls[call_sid] = CallSession(call_sid, caller_number)
         return self.active_calls[call_sid]
