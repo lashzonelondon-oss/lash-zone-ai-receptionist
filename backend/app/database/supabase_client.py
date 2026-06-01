@@ -282,6 +282,28 @@ class DatabaseManager:
             print(f"Error creating escalation: {e}")
             return None
 
+    async def create_followup(self, followup_data: Dict[str, Any]) -> Optional[Dict]:
+        """Create a follow-up / callback request record."""
+        try:
+            data = {
+                "caller_name": followup_data.get("caller_name"),
+                "caller_phone": followup_data.get("caller_phone"),
+                "summary": followup_data.get("summary"),
+                "service_interest": followup_data.get("service_interest"),
+                "preferred_callback_time": followup_data.get("preferred_callback_time"),
+                "request_type": followup_data.get("request_type", "callback"),
+                "call_sid": followup_data.get("call_sid"),
+                "status": followup_data.get("status", "pending"),
+                "email_sent": followup_data.get("email_sent", False),
+                "created_at": datetime.now().isoformat()
+            }
+
+            result = get_service_client().table("follow_ups").insert(data).execute()
+            return result.data[0] if result.data else None
+
+        except Exception as e:
+            print(f"Error creating follow-up: {e}")
+            return None
     async def get_escalations(self, status: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """Get escalation requests"""
         try:
