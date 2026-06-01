@@ -108,8 +108,12 @@ async def gather_response(request: Request):
             ai_response = "I'm so sorry, could you say that again for me?"
 
         # Send SMS booking link if the AI flagged it
+        # NOTE: SMS sending is currently disabled. We are online-booking only and the
+        # receptionist verbally directs callers to the website instead of texting a link.
+        # Set BOOKING_SMS_ENABLED = True to re-enable the SMS booking link.
+        BOOKING_SMS_ENABLED = False
         try:
-            wants = getattr(call_context, "needs_booking_link", False)
+            wants = BOOKING_SMS_ENABLED and getattr(call_context, "needs_booking_link", False)
             already = getattr(session, "booking_link_sent", False)
             print(f"Booking-link check: needs={wants} already_sent={already} caller={caller_number}")
             if wants and not already and caller_number not in ("unknown", ""):
