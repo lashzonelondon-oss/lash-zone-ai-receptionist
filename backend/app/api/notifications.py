@@ -1,25 +1,24 @@
 """
 Follow-up / callback notification sender.
-Sends a plain-text email notification (via Gmail SMTP using an App Password)
+Sends a plain-text email notification (via Resend API)
 when a caller requests a follow-up, callback, or more information.
 This module is intentionally self-contained and defensive: send_followup_email
 NEVER raises. All errors are caught and logged so that a notification failure
 can never affect a live phone call.
 Required environment variables:
-    GMAIL_ADDRESS      - the Gmail account used to authenticate / send
-    GMAIL_APP_PASSWORD - 16-char Gmail App Password (spaces removed)
+    RESEND_API_KEY     - API key from resend.com
     FOLLOWUP_EMAIL_TO  - recipient inbox for follow-up notifications
 """
 
 import os
-import ssl
-import smtplib
-from email.message import EmailMessage
+import json
+import urllib.request
+import urllib.error
 from datetime import datetime
 from typing import Dict, Any
 
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 465
+RESEND_API_URL = "https://api.resend.com/emails"
+RESEND_FROM = "Lash Zone Receptionist <onboarding@resend.dev>"
 
 def _val(data: Dict[str, Any], key: str) -> str:
     """Return a human-friendly value, or 'Not provided' when missing/empty."""
@@ -29,18 +28,16 @@ def _val(data: Dict[str, Any], key: str) -> str:
     v = str(v).strip()
     return v if v else "Not provided"
 
-def _build_message(followup: Dict[str, Any], sender: str, recipient: str) -> EmailMessage:
-    """Build the plain-text follow-up notification email."""
+def _build_body(followup: Dict[str, Any]) -> str:
+    """Build the plain-text email body."""
     name = _val(followup, "caller_name")
     request_type = _val(followup, "request_type")
     if request_type == "Not provided":
         request_type = "callback"
 
-    subject = f"New follow-up request from {name} \u2014 {request_type}"
-
     received = followup.get("created_at") or datetime.now().isoformat()
 
-    body = (
+    return (
         "A caller has requested a follow-up.\n\n"
         f"Name: {name}\n"
         f"Phone: {_val(followup, 'caller_phone')}\n"
@@ -52,42 +49,49 @@ def _build_message(followup: Dict[str, Any], sender: str, recipient: str) -> Ema
         f"Call reference: {_val(followup, 'call_sid')}\n"
     )
 
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = sender
-    msg["To"] = recipient
-    msg.set_content(body)
-    return msg
-
 def send_followup_email(followup: Dict[str, Any]) -> bool:
     """
-    Send a plain-text follow-up notification email.
+    Send a plain-text follow-up notification email via Resend.
     Returns True on success, False on any failure. Never raises.
-    The Gmail App Password is never logged.
+    The API key is never logged.
     """
     try:
-        sender = (os.environ.get("GMAIL_ADDRESS") or "").strip()
-        password = (os.environ.get("GMAIL_APP_PASSWORD") or "").replace(" ", "").strip()
-        recipient = (os.environ.get("FOLLOWUP_EMAIL_TO") or sender).strip()
+        api_key = (os.environ.get("RESEND_API_KEY") or "").strip()
+        recipient = (os.environ.get("FOLLOWUP_EMAIL_TO") or "").strip()
 
-        if not sender or not password:
-            print("Follow-up email NOT sent: GMAIL_ADDRESS or GMAIL_APP_PASSWORD not configured")
+        if not api_key:
+            print("Follow-up email NOT sent: RESEND_API_KEY not configured")
             return False
         if not recipient:
-            print("Follow-up email NOT sent: no recipient configured")
+            print("Follow-up email NOT sent: FOLLOWUP_EMAIL_TO not configured")
             return False
 
-        msg = _build_message(followup, sender, recipient)
+        name = _val(followup, "caller_name")
+        request_type = _val(followup, "request_type")
+        if request_type == "Not provided":
+            request_type = "callback"
 
-        context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=15) as server:
-            server.login(sender, password)
-            server.send_message(msg)
+        payload = json.dumps({
+            "from": RESEND_FROM,
+            "to": [recipient],
+            "subject": f"New follow-up request from {name} \u2014 {request_type}",
+            "text": _build_body(followup),
+        }).encode("utf-8")
 
-        print(f"Follow-up email sent to {recipient}")
-        return True
+        req = urllib.request.Request(
+            RESEND_API_URL,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"Follow-up email sent to {recipient} (status {resp.status})")
+            return True
 
     except Exception as e:
-        # Never let an email failure propagate into the call flow.
         print(f"Follow-up email error: {repr(e)}")
         return False
