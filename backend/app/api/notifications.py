@@ -1,17 +1,14 @@
 """
 Follow-up / callback notification sender.
-
 Sends a plain-text email notification (via Gmail SMTP using an App Password)
 when a caller requests a follow-up, callback, or more information.
-
 This module is intentionally self-contained and defensive: send_followup_email
 NEVER raises. All errors are caught and logged so that a notification failure
 can never affect a live phone call.
-
 Required environment variables:
-    GMAIL_ADDRESS        - the Gmail account used to authenticate / send
-    GMAIL_APP_PASSWORD   - 16-char Gmail App Password (spaces removed)
-    FOLLOWUP_EMAIL_TO    - recipient inbox for follow-up notifications
+    GMAIL_ADDRESS      - the Gmail account used to authenticate / send
+    GMAIL_APP_PASSWORD - 16-char Gmail App Password (spaces removed)
+    FOLLOWUP_EMAIL_TO  - recipient inbox for follow-up notifications
 """
 
 import os
@@ -21,10 +18,8 @@ from email.message import EmailMessage
 from datetime import datetime
 from typing import Dict, Any
 
-
 SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
-
+SMTP_PORT = 465
 
 def _val(data: Dict[str, Any], key: str) -> str:
     """Return a human-friendly value, or 'Not provided' when missing/empty."""
@@ -34,7 +29,6 @@ def _val(data: Dict[str, Any], key: str) -> str:
     v = str(v).strip()
     return v if v else "Not provided"
 
-
 def _build_message(followup: Dict[str, Any], sender: str, recipient: str) -> EmailMessage:
     """Build the plain-text follow-up notification email."""
     name = _val(followup, "caller_name")
@@ -42,7 +36,7 @@ def _build_message(followup: Dict[str, Any], sender: str, recipient: str) -> Ema
     if request_type == "Not provided":
         request_type = "callback"
 
-    subject = f"New follow-up request from {name} — {request_type}"
+    subject = f"New follow-up request from {name} \u2014 {request_type}"
 
     received = followup.get("created_at") or datetime.now().isoformat()
 
@@ -65,11 +59,9 @@ def _build_message(followup: Dict[str, Any], sender: str, recipient: str) -> Ema
     msg.set_content(body)
     return msg
 
-
 def send_followup_email(followup: Dict[str, Any]) -> bool:
     """
     Send a plain-text follow-up notification email.
-
     Returns True on success, False on any failure. Never raises.
     The Gmail App Password is never logged.
     """
@@ -88,10 +80,7 @@ def send_followup_email(followup: Dict[str, Any]) -> bool:
         msg = _build_message(followup, sender, recipient)
 
         context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=15) as server:
             server.login(sender, password)
             server.send_message(msg)
 
