@@ -63,67 +63,70 @@ async def incoming_call(request: Request):
 @app.post("/webhook/gather")
 async def gather_response(request: Request):
     """
-    Handle speech gathered by Twilio - process with AI and respond
-    This is the core conversation loop for the AI receptionist
+    Handle speech gathered by Twilio - process with AI and respond.
+    Core conversation loop for the AI receptionist.
     """
     form_data = await request.form()
     call_sid = form_data.get("CallSid", "")
-    caller_number = form_data.get("From") or form_data.get("ForwardedFrom", "unknown")
-    speech_result = form_data.get("SpeechResult", "").strip()
+    caller_number = form_data.get("ForwardedFrom") or form_data.get("From", "unknown")
+    speech_result = (form_data.get("SpeechResult") or "").strip()
     confidence = form_data.get("Confidence", "0")
 
     print(f"Gather from {caller_number} (SID: {call_sid}): '{speech_result}' (confidence: {confidence})")
 
-    # Get or create session
+    base = voice_handler.base_url.rstrip("/")
     session = voice_handler.get_or_create_session(call_sid, caller_number)
 
     if not speech_result:
-        # No speech detected - prompt again
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Amy" language="en-GB">I'm sorry, I didn't quite catch that. Could you please repeat that?</Say>
-    <Gather input="speech" action="{voice_handler.base_url.rstrip('/')}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
-    </Gather>
+    <Say voice="Polly.Amy" language="en-GB">I'm sorry, I didn't quite catch that. Could you please repeat that for me?</Say>
+    <Gather input="speech" action="{base}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true"></Gather>
+    <Say voice="Polly.Amy" language="en-GB">I'm having trouble hearing you. Please call back and we'll be happy to help. Goodbye!</Say>
     <Hangup/>
 </Response>"""
         return Response(content=twiml, media_type="application/xml")
 
-    # Add to conversation history
-    session.transcript.append({"role": "user", "content": speech_result})
-
     try:
-        # Build conversation history for AI
         from ..ai.receptionist import CallContext
-        conversation_history = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in session.transcript[:-1]
-        ]
 
+        # Build a CallContext carrying the full conversation history for this call.
+        # generate_response() appends the user + assistant messages to this list,
+        # so we persist it back onto the session afterwards.
         call_context = CallContext(
             caller_number=caller_number,
-            conversation_history=conversation_history
+            conversation_history=list(session.transcript),
         )
 
-        # Get AI response
-        ai_result = await receptionist.process_message(speech_result, call_context)
-        ai_response = ai_result.get("response", "I'm sorry, I didn't catch that. Could you repeat that?")
-        outcome = ai_result.get("outcome")
+        # generate_response signature: (call_context, user_message) -> str
+        ai_response = await receptionist.generate_response(call_context, speech_result)
 
-        # Add AI response to transcript
-        session.transcript.append({"role": "assistant", "content": ai_response})
+        # Persist updated conversation history back to the session
+        session.transcript = call_context.conversation_history
 
-        # Handle SMS booking link if needed
-        if ai_result.get("send_sms") and caller_number != "unknown":
-            sms_message = ai_result.get("sms_message", "")
-            if sms_message:
-                voice_handler.send_sms(to_number=caller_number, message=sms_message)
+        if not ai_response or not ai_response.strip():
+            ai_response = "I'm so sorry, could you say that again for me?"
 
-        # Check if call should end
-        is_final = outcome in ["call_ended", "escalated"] or any(
-            phrase in ai_response.lower() for phrase in ["goodbye", "take care", "have a wonderful", "thank you for calling, bye"]
+        # Send SMS booking link if the AI flagged it
+        try:
+            if getattr(call_context, "needs_booking_link", False) and not getattr(call_context, "booking_link_sent", False) and caller_number not in ("unknown", ""):
+                booking_url = os.environ.get("BOOKING_URL", "")
+                if booking_url:
+                    voice_handler.send_sms(
+                        to_number=caller_number,
+                        message=f"Hi from Lash Zone London! Here's the link to book your appointment: {booking_url}. We can't wait to see you!"
+                    )
+                    call_context.booking_link_sent = True
+        except Exception as sms_err:
+            print(f"SMS booking link error: {sms_err}")
+
+        # Decide whether the call should end
+        outcome = getattr(call_context, "outcome", None)
+        lower = ai_response.lower()
+        is_final = bool(getattr(outcome, "value", None) in ("escalated",)) or any(
+            p in lower for p in ["goodbye", "take care", "have a wonderful day", "have a lovely day", "bye for now"]
         )
 
-        # Generate TwiML response
         twiml = voice_handler.get_gather_response_twiml(ai_response, call_sid, is_final=is_final)
         return Response(content=twiml, media_type="application/xml")
 
@@ -131,12 +134,12 @@ async def gather_response(request: Request):
         print(f"Error processing gather for {call_sid}: {e}")
         import traceback
         traceback.print_exc()
-        fallback_twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+        fallback = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Amy" language="en-GB">I'm so sorry, I'm having a little trouble at the moment. Please call back shortly and one of the team will be happy to help. Goodbye!</Say>
     <Hangup/>
 </Response>"""
-        return Response(content=fallback_twiml, media_type="application/xml")
+        return Response(content=fallback, media_type="application/xml")
 
 
 @app.post("/webhook/call-status")
@@ -479,8 +482,8 @@ async def startup():
     print("Starting Lash Zone London AI Receptionist...")
     # Load AI config from database
     await receptionist.load_config()
-    print(f"â AI Model: {receptionist.model}")
-    print(f"â AI Voice: {receptionist.voice}")
+    print(f"Ã¢ÂÂ AI Model: {receptionist.model}")
+    print(f"Ã¢ÂÂ AI Voice: {receptionist.voice}")
     voice_handler.set_receptionist(receptionist)
 
 
