@@ -53,7 +53,7 @@ class TwilioVoiceHandler:
         """Set the AI receptionist instance (called from startup)"""
         self._receptionist = receptionist
 
-        def get_or_create_session(self, call_sid: str, caller_number: str) -> CallSession:
+    def get_or_create_session(self, call_sid: str, caller_number: str) -> CallSession:
         if call_sid not in self.active_calls:
             self.active_calls[call_sid] = CallSession(call_sid, caller_number)
         return self.active_calls[call_sid]
