@@ -1,0 +1,30 @@
+# Lash Zone London AI Receptionist - Backend Dependencies
+
+# Web Framework
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Twilio
+twilio==9.0.0
+
+# OpenAI
+openai==1.12.0
+
+# Supabase
+supabase==2.4.5
+
+# Environment
+python-dotenv==1.0.1
+
+# WebSocket support
+websockets==12.0
+
+# Audio processing (optional)
+pydub==0.25.1
+
+# HTTP client
+httpx==0.26.0
+
+# Async support
+anyio==4.2.0

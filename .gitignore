@@ -1,0 +1,4 @@
+backend/.env
+frontend/lash-zone-admin/node_modules
+*.pyc
+__pycache__/
