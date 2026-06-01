@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["python311", "python311Packages.pip", "gcc", "libxml2", "libxmlsec1", "libxmlsec1-openssl"]
+
+[variables]
+PYTHONJSONRPC = "0"
+PYTHONOPTIMIZE = "1"
+
+[phases.install]
+cmds = ["pip install --upgrade pip", "pip install -r backend/requirements.txt"]
+
+[start]
+command = "cd backend && python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
