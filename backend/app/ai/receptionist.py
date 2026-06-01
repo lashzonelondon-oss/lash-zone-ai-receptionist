@@ -68,6 +68,11 @@ class CallContext:
     outcome: Optional[CallOutcome] = None
     needs_booking_link: bool = False
     booking_link_sent: bool = False
+    needs_followup: bool = False
+    followup_saved: bool = False
+    followup_summary: Optional[str] = None
+    followup_service: Optional[str] = None
+    preferred_callback_time: Optional[str] = None
     services_discussed: List[str] = field(default_factory=list)
 
     def add_message(self, role: str, content: str):
@@ -109,6 +114,9 @@ RESPONSE STYLE:
 - Be friendly and confident, never robotic
 - Use British English spelling and phrasing (colour not color, centre not center, etc.)
 - Never invent prices - offer to send the booking link for current pricing instead
+
+HANDLING FOLLOW-UP REQUESTS:
+If a caller asks for a callback, asks someone to contact them, asks for more information to be sent, asks to speak with or be contacted by the owner, or asks about training courses, treat this as a follow-up request. Politely collect a few brief details so the team can get back to them: their name, a short summary of what they would like help with, and the specific service or course they are interested in if they mention one. You may also ask if there is a preferred time for the callback, but this is optional - never insist on it. Keep it natural and brief, asking one thing at a time. Once you have their name and a short summary, reassure them that someone from the team will get back to them, and let them know we accept online booking only via our website for appointments.
 
 ABOUT LASH ZONE LONDON:
 Lash Zone London is an award-winning lash and brow studio with over 11 years of expertise. The studio is founded by Karolina Vilmane, who has completed over 50 professional training courses, won multiple industry awards, and personally trains every member of the team. What sets Lash Zone London apart: a lash health first approach, personalised styling for every client, a luxury client experience, advanced LED lash technology, a reduced allergy risk approach, high hygiene standards, detailed consultations, ongoing professional education, and a 7-day guarantee on all lash work.
@@ -253,6 +261,12 @@ class LashZoneReceptionist:
         if self._wants_booking_link(user_message):
             call_context.needs_booking_link = True
 
+        # Detect if the caller wants a follow-up / callback / more information.
+        # When detected, flag the context so the gather endpoint saves the request
+        # to Supabase and emails a notification. Existing flows are unaffected.
+        if self._wants_followup(user_message):
+            call_context.needs_followup = True
+
         # Build messages for API
         messages = [{"role": "system", "content": self.system_prompt}]
 
@@ -331,6 +345,19 @@ class LashZoneReceptionist:
         ]
         stripped = message_lower.strip().strip(".!? ")
         return stripped in affirmatives
+
+    def _wants_followup(self, message: str) -> bool:
+        """Detect whether the caller is asking for a follow-up, callback, or more information."""
+        message_lower = message.lower()
+        followup_phrases = [
+            "call me back", "callback", "call back", "ring me back", "ring me",
+            "someone call me", "somebody call me", "have someone call", "get back to me",
+            "have someone get back", "please have someone", "someone to contact me",
+            "contact me", "email me more", "email me information", "more information",
+            "more details", "owner to contact", "speak to the owner", "have the owner",
+            "training course", "training courses", "course information", "information about training",
+        ]
+        return any(phrase in message_lower for phrase in followup_phrases)
 
     async def generate_speech(self, text: str, voice: str = "alloy") -> bytes:
         """
