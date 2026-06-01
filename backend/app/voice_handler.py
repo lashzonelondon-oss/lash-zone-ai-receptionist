@@ -83,21 +83,39 @@ class TwilioVoiceHandler:
     <Hangup/>
 </Response>"""
 
+    def _to_e164(self, number: str) -> str:
+        """Best-effort normalise a phone number to E.164 (UK default)."""
+        if not number:
+            return number
+        n = number.strip().replace(" ", "").replace("-", "")
+        if n.startswith("+"):
+            return n
+        if n.startswith("00"):
+            return "+" + n[2:]
+        if n.startswith("0"):
+            # Assume UK mobile/landline
+            return "+44" + n[1:]
+        return "+" + n
+
     def send_sms(self, to_number: str, message: str, from_number: Optional[str] = None) -> bool:
-        """Send an SMS message via Twilio"""
+        """Send an SMS message via Twilio with detailed logging."""
         try:
             import os
             from twilio.rest import Client
             account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
             auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
             twilio_number = from_number or os.environ.get("TWILIO_PHONE_NUMBER")
+            to_e164 = self._to_e164(to_number)
+            print(f"SMS attempt -> to={to_e164} from={twilio_number} sid_set={bool(account_sid)} token_set={bool(auth_token)}")
             if not all([account_sid, auth_token, twilio_number]):
+                print("SMS not sent: missing Twilio credentials/number env vars")
                 return False
             client = Client(account_sid, auth_token)
-            client.messages.create(body=message, from_=twilio_number, to=to_number)
+            msg = client.messages.create(body=message, from_=twilio_number, to=to_e164)
+            print(f"SMS sent OK: sid={msg.sid} status={msg.status} to={to_e164}")
             return True
         except Exception as e:
-            print(f"SMS send error: {e}")
+            print(f"SMS send error: {repr(e)}")
             return False
 
 
