@@ -109,16 +109,23 @@ async def gather_response(request: Request):
 
         # Send SMS booking link if the AI flagged it
         try:
-            if getattr(call_context, "needs_booking_link", False) and not getattr(call_context, "booking_link_sent", False) and caller_number not in ("unknown", ""):
+            wants = getattr(call_context, "needs_booking_link", False)
+            already = getattr(call_context, "booking_link_sent", False)
+            print(f"Booking-link check: needs={wants} already_sent={already} caller={caller_number}")
+            if wants and not already and caller_number not in ("unknown", ""):
                 booking_url = os.environ.get("BOOKING_URL", "")
                 if booking_url:
-                    voice_handler.send_sms(
+                    sent_ok = voice_handler.send_sms(
                         to_number=caller_number,
                         message=f"Hi from Lash Zone London! Here's the link to book your appointment: {booking_url}. We can't wait to see you!"
                     )
-                    call_context.booking_link_sent = True
+                    print(f"Booking-link SMS send result: {sent_ok}")
+                    if sent_ok:
+                        call_context.booking_link_sent = True
+                else:
+                    print("Booking-link SMS NOT sent: BOOKING_URL env var is empty")
         except Exception as sms_err:
-            print(f"SMS booking link error: {sms_err}")
+            print(f"SMS booking link error: {repr(sms_err)}")
 
         # Decide whether the call should end
         outcome = getattr(call_context, "outcome", None)
@@ -482,8 +489,8 @@ async def startup():
     print("Starting Lash Zone London AI Receptionist...")
     # Load AI config from database
     await receptionist.load_config()
-    print(f"Ã¢ÂÂ AI Model: {receptionist.model}")
-    print(f"Ã¢ÂÂ AI Voice: {receptionist.voice}")
+    print(f"ÃÂ¢ÃÂÃÂ AI Model: {receptionist.model}")
+    print(f"ÃÂ¢ÃÂÃÂ AI Voice: {receptionist.voice}")
     voice_handler.set_receptionist(receptionist)
 
 
