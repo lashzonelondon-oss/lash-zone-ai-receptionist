@@ -110,7 +110,7 @@ async def gather_response(request: Request):
         # Send SMS booking link if the AI flagged it
         try:
             wants = getattr(call_context, "needs_booking_link", False)
-            already = getattr(call_context, "booking_link_sent", False)
+            already = getattr(session, "booking_link_sent", False)
             print(f"Booking-link check: needs={wants} already_sent={already} caller={caller_number}")
             if wants and not already and caller_number not in ("unknown", ""):
                 booking_url = os.environ.get("BOOKING_URL", "")
@@ -122,6 +122,7 @@ async def gather_response(request: Request):
                     print(f"Booking-link SMS send result: {sent_ok}")
                     if sent_ok:
                         call_context.booking_link_sent = True
+                        session.booking_link_sent = True
                 else:
                     print("Booking-link SMS NOT sent: BOOKING_URL env var is empty")
         except Exception as sms_err:
