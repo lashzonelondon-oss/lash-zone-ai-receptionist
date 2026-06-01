@@ -37,11 +37,11 @@ class TwilioVoiceHandler:
         base_url = self.base_url.rstrip("/")
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Amy" language="en-GB">Thank you for calling Lash Zone London! How can I help you today?</Say>
+    <Say voice="Polly.Amy-Neural" language="en-GB">Thank you for calling Lash Zone London! How can I help you today?</Say>
     <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
-        <Say voice="Polly.Amy" language="en-GB">Please go ahead and speak.</Say>
+        <Say voice="Polly.Amy-Neural" language="en-GB">Please go ahead and speak.</Say>
     </Gather>
-    <Say voice="Polly.Amy" language="en-GB">I didn't catch that. Please call back and I'll be happy to help. Goodbye!</Say>
+    <Say voice="Polly.Amy-Neural" language="en-GB">I didn't catch that. Please call back and I'll be happy to help. Goodbye!</Say>
 </Response>"""
         return twiml
 
@@ -69,15 +69,15 @@ class TwilioVoiceHandler:
         if is_final:
             return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Amy" language="en-GB">{safe_text}</Say>
+    <Say voice="Polly.Amy-Neural" language="en-GB">{safe_text}</Say>
     <Hangup/>
 </Response>"""
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Amy" language="en-GB">{safe_text}</Say>
+    <Say voice="Polly.Amy-Neural" language="en-GB">{safe_text}</Say>
     <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
     </Gather>
-    <Say voice="Polly.Amy" language="en-GB">Is there anything else I can help you with today?</Say>
+    <Say voice="Polly.Amy-Neural" language="en-GB">Is there anything else I can help you with today?</Say>
     <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
     </Gather>
     <Hangup/>
