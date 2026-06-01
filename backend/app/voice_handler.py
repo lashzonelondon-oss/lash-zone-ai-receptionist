@@ -48,18 +48,24 @@ class VoiceHandler:
 
     def get_incoming_call_twiml(self) -> str:
         """Generate TwiML for incoming calls - connects to WebSocket stream"""
+        # Strip protocol from base_url for wss:// URL
+        ws_host = self.base_url.replace("https://", "").replace("http://", "")
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="alloy" language="en-GB" style="friendly">
-        Please wait while I connect you to our AI assistant.
+    <Say voice="Polly.Amy" language="en-GB">
+        Thank you for calling Lash Zone London! I'm the studio receptionist — how can I help you today? Whether you'd like to book an appointment, find out about our treatments, or have any questions, I'm here for you.
     </Say>
     <Connect>
-        <Stream url="wss://{self.base_url}/ws/voice" name="ai-receptionist" track="inbound_track">
+        <Stream url="wss://{ws_host}/ws/voice" name="ai-receptionist" track="inbound_track">
             <Parameter name="studioName" value="{self.studio_name}"/>
         </Stream>
     </Connect>
 </Response>"""
         return twiml
+
+    def create_incoming_call_webhook_response(self) -> str:
+        """Alias for get_incoming_call_twiml — called by routes.py webhook handler"""
+        return self.get_incoming_call_twiml()
 
     def get_or_create_session(self, call_sid: str, caller_number: str) -> CallSession:
         """Get existing session or create new"""
