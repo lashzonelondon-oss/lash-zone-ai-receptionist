@@ -183,14 +183,19 @@ class LashZoneReceptionist:
             import httpx
             base_url = os.environ.get("BASE_URL", "https://talented-fulfillment-production-8f33.up.railway.app")
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"{base_url}/admin/config", timeout=5.0)
+                response = await client.get(f"{base_url}/api/config", timeout=5.0)
                 if response.status_code == 200:
                     data = response.json()
-                    if "config" in data and "ai_settings" in data["config"]:
-                        self._system_prompt = data["config"]["ai_settings"].get("system_prompt", FALLBACK_SYSTEM_PROMPT)
-                        self._config_loaded = True
-                        print("✅ Loaded AI config from database")
-                        return
+                    # Handle different response formats
+                    config_data = data.get("data", data)
+                    ai_settings = config_data.get("ai_settings", config_data.get("value", {}))
+                    if isinstance(ai_settings, str):
+                        import json
+                        ai_settings = json.loads(ai_settings)
+                    self._system_prompt = ai_settings.get("system_prompt", FALLBACK_SYSTEM_PROMPT)
+                    self._config_loaded = True
+                    print("✅ Loaded AI config from database")
+                    return
         except Exception as e:
             print(f"Could not load config from endpoint: {e}")
 
