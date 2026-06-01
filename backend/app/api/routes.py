@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse
 from starlette.responses import PlainTextResponse
@@ -22,7 +22,7 @@ import uvicorn
 # Import our modules
 from ..ai.receptionist import receptionist, CallContext, CallOutcome
 from ..database.supabase_client import db
-from ..main import voice_handler, get_audio_from_stream
+from ..voice_handler import voice_handler
 
 # Create FastAPI app
 app = FastAPI(
@@ -58,6 +58,85 @@ async def incoming_call(request: Request):
     twiml_response = voice_handler.create_incoming_call_webhook_response()
 
     return Response(content=twiml_response, media_type="application/xml")
+
+
+@app.post("/webhook/gather")
+async def gather_response(request: Request):
+    """
+    Handle speech gathered by Twilio - process with AI and respond
+    This is the core conversation loop for the AI receptionist
+    """
+    form_data = await request.form()
+    call_sid = form_data.get("CallSid", "")
+    caller_number = form_data.get("From") or form_data.get("ForwardedFrom", "unknown")
+    speech_result = form_data.get("SpeechResult", "").strip()
+    confidence = form_data.get("Confidence", "0")
+
+    print(f"Gather from {caller_number} (SID: {call_sid}): '{speech_result}' (confidence: {confidence})")
+
+    # Get or create session
+    session = voice_handler.get_or_create_session(call_sid, caller_number)
+
+    if not speech_result:
+        # No speech detected - prompt again
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Amy" language="en-GB">I'm sorry, I didn't quite catch that. Could you please repeat that?</Say>
+    <Gather input="speech" action="{voice_handler.base_url.rstrip('/')}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
+    </Gather>
+    <Hangup/>
+</Response>"""
+        return Response(content=twiml, media_type="application/xml")
+
+    # Add to conversation history
+    session.transcript.append({"role": "user", "content": speech_result})
+
+    try:
+        # Build conversation history for AI
+        from ..ai.receptionist import CallContext
+        conversation_history = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in session.transcript[:-1]
+        ]
+
+        call_context = CallContext(
+            caller_number=caller_number,
+            conversation_history=conversation_history
+        )
+
+        # Get AI response
+        ai_result = await receptionist.process_message(speech_result, call_context)
+        ai_response = ai_result.get("response", "I'm sorry, I didn't catch that. Could you repeat that?")
+        outcome = ai_result.get("outcome")
+
+        # Add AI response to transcript
+        session.transcript.append({"role": "assistant", "content": ai_response})
+
+        # Handle SMS booking link if needed
+        if ai_result.get("send_sms") and caller_number != "unknown":
+            sms_message = ai_result.get("sms_message", "")
+            if sms_message:
+                voice_handler.send_sms(to_number=caller_number, message=sms_message)
+
+        # Check if call should end
+        is_final = outcome in ["call_ended", "escalated"] or any(
+            phrase in ai_response.lower() for phrase in ["goodbye", "take care", "have a wonderful", "thank you for calling, bye"]
+        )
+
+        # Generate TwiML response
+        twiml = voice_handler.get_gather_response_twiml(ai_response, call_sid, is_final=is_final)
+        return Response(content=twiml, media_type="application/xml")
+
+    except Exception as e:
+        print(f"Error processing gather for {call_sid}: {e}")
+        import traceback
+        traceback.print_exc()
+        fallback_twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Amy" language="en-GB">I'm so sorry, I'm having a little trouble at the moment. Please call back shortly and one of the team will be happy to help. Goodbye!</Say>
+    <Hangup/>
+</Response>"""
+        return Response(content=fallback_twiml, media_type="application/xml")
 
 
 @app.post("/webhook/call-status")
@@ -400,8 +479,8 @@ async def startup():
     print("Starting Lash Zone London AI Receptionist...")
     # Load AI config from database
     await receptionist.load_config()
-    print(f"✅ AI Model: {receptionist.model}")
-    print(f"✅ AI Voice: {receptionist.voice}")
+    print(f"â AI Model: {receptionist.model}")
+    print(f"â AI Voice: {receptionist.voice}")
     voice_handler.set_receptionist(receptionist)
 
 
