@@ -15,28 +15,33 @@ supabase_url = os.environ.get("SUPABASE_URL")
 supabase_anon_key = os.environ.get("SUPABASE_ANON_KEY")
 supabase_service_key = os.environ.get("SUPABASE_SERVICE_KEY")
 
-# Create Supabase clients
-supabase: Client = create_client(
-    supabase_url,
-    supabase_anon_key,
-    options=ClientOptions(
-        headers={
-            "apikey": supabase_anon_key,
-            "Authorization": f"Bearer {supabase_anon_key}"
-        }
-    )
-)
+# Lazy Supabase client initialization - created on first use to avoid startup crashes
+_supabase_client = None
+_service_client = None
 
-service_client: Client = create_client(
-    supabase_url,
-    supabase_service_key,
-    options=ClientOptions(
-        headers={
-            "apikey": supabase_service_key,
-            "Authorization": f"Bearer {supabase_service_key}"
-        }
-    )
-)
+def get_supabase_client() -> Client:
+    global _supabase_client
+    if _supabase_client is None:
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_ANON_KEY")
+        if not url or not key:
+            raise ValueError("SUPABASE_URL and SUPABASE_ANON_KEY must be set")
+        _supabase_client = create_client(url, key)
+    return _supabase_client
+
+def get_service_client() -> Client:
+    global _service_client
+    if _service_client is None:
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
+        _service_client = create_client(url, key)
+    return _service_client
+
+# Backward-compatible aliases (used throughout the class)
+supabase = None  # Will be initialised lazily
+service_client = None  # Will be initialised lazily
 
 
 class DatabaseManager:
@@ -56,7 +61,7 @@ class DatabaseManager:
                 "created_at": datetime.now().isoformat()
             }
 
-            result = service_client.table("calls").insert(data).execute()
+            result = get_service_client().table("calls").insert(data).execute()
             return result.data[0] if result.data else None
 
         except Exception as e:
@@ -68,7 +73,7 @@ class DatabaseManager:
         try:
             update_data["updated_at"] = datetime.now().isoformat()
 
-            result = service_client.table("calls").update(update_data).eq("id", call_id).execute()
+            result = get_service_client().table("calls").update(update_data).eq("id", call_id).execute()
             return len(result.data) > 0
 
         except Exception as e:
@@ -78,7 +83,7 @@ class DatabaseManager:
     async def get_call(self, call_id: str) -> Optional[Dict]:
         """Get call by ID"""
         try:
-            result = supabase.table("calls").select("*").eq("id", call_id).execute()
+            result = get_supabase_client().table("calls").select("*").eq("id", call_id).execute()
             return result.data[0] if result.data else None
 
         except Exception as e:
@@ -88,7 +93,7 @@ class DatabaseManager:
     async def get_calls(self, limit: int = 50, offset: int = 0) -> List[Dict]:
         """Get recent calls"""
         try:
-            result = supabase.table("calls").select("*").order(
+            result = get_supabase_client().table("calls").select("*").order(
                 "created_at", desc=True
             ).range(offset, offset + limit - 1).execute()
 
@@ -101,7 +106,7 @@ class DatabaseManager:
     async def search_calls(self, query: str) -> List[Dict]:
         """Search calls by caller number or transcript"""
         try:
-            result = supabase.table("calls").select("*").or_(
+            result = get_supabase_client().table("calls").select("*").or_(
                 f"caller_number.ilike.%{query}%",
                 f"transcript_json.ilike.%{query}%"
             ).order("created_at", desc=True).execute()
@@ -131,7 +136,7 @@ class DatabaseManager:
                 "created_at": datetime.now().isoformat()
             }
 
-            result = service_client.table("appointments").insert(data).execute()
+            result = get_service_client().table("appointments").insert(data).execute()
             return result.data[0] if result.data else None
 
         except Exception as e:
@@ -143,7 +148,7 @@ class DatabaseManager:
         try:
             update_data["updated_at"] = datetime.now().isoformat()
 
-            result = service_client.table("appointments").update(update_data).eq("id", appointment_id).execute()
+            result = get_service_client().table("appointments").update(update_data).eq("id", appointment_id).execute()
             return len(result.data) > 0
 
         except Exception as e:
@@ -158,7 +163,7 @@ class DatabaseManager:
     ) -> List[Dict]:
         """Get appointments with optional filters"""
         try:
-            query = supabase.table("appointments").select("*")
+            query = get_supabase_client().table("appointments").select("*")
 
             if date:
                 query = query.eq("requested_date", date)
@@ -177,7 +182,7 @@ class DatabaseManager:
         """Check if time slot is available"""
         try:
             # Get all appointments for the date
-            result = supabase.table("appointments").select("*").eq(
+            result = get_supabase_client().table("appointments").select("*").eq(
                 "requested_date", date
             ).eq("status", "confirmed").execute()
 
@@ -214,7 +219,7 @@ class DatabaseManager:
             phone = client_data.get("client_phone")
 
             # Check if client exists
-            existing = supabase.table("clients").select("*").eq("phone", phone).execute()
+            existing = get_supabase_client().table("clients").select("*").eq("phone", phone).execute()
 
             if existing.data:
                 # Update existing
@@ -222,7 +227,7 @@ class DatabaseManager:
                 update_data = {k: v for k, v in client_data.items() if v}
                 update_data["updated_at"] = datetime.now().isoformat()
 
-                result = service_client.table("clients").update(update_data).eq("id", client_id).execute()
+                result = get_service_client().table("clients").update(update_data).eq("id", client_id).execute()
                 return result.data[0] if result.data else None
 
             else:
@@ -236,7 +241,7 @@ class DatabaseManager:
                     "created_at": datetime.now().isoformat()
                 }
 
-                result = service_client.table("clients").insert(data).execute()
+                result = get_service_client().table("clients").insert(data).execute()
                 return result.data[0] if result.data else None
 
         except Exception as e:
@@ -246,7 +251,7 @@ class DatabaseManager:
     async def get_client_by_phone(self, phone: str) -> Optional[Dict]:
         """Get client by phone number"""
         try:
-            result = supabase.table("clients").select("*").eq("phone", phone).execute()
+            result = get_supabase_client().table("clients").select("*").eq("phone", phone).execute()
             return result.data[0] if result.data else None
 
         except Exception as e:
@@ -271,7 +276,7 @@ class DatabaseManager:
                 "created_at": datetime.now().isoformat()
             }
 
-            result = service_client.table("escalations").insert(data).execute()
+            result = get_service_client().table("escalations").insert(data).execute()
             return result.data[0] if result.data else None
 
         except Exception as e:
@@ -281,7 +286,7 @@ class DatabaseManager:
     async def get_escalations(self, status: Optional[str] = None, limit: int = 50) -> List[Dict]:
         """Get escalation requests"""
         try:
-            query = supabase.table("escalations").select("*")
+            query = get_supabase_client().table("escalations").select("*")
 
             if status:
                 query = query.eq("status", status)
@@ -296,7 +301,7 @@ class DatabaseManager:
     async def resolve_escalation(self, escalation_id: str, notes: str = "") -> bool:
         """Mark escalation as resolved"""
         try:
-            result = service_client.table("escalations").update({
+            result = get_service_client().table("escalations").update({
                 "status": "resolved",
                 "resolved_at": datetime.now().isoformat(),
                 "notes": notes
@@ -313,7 +318,7 @@ class DatabaseManager:
     async def get_config(self, key: str) -> Optional[str]:
         """Get configuration value"""
         try:
-            result = supabase.table("studio_config").select("config_value").eq(
+            result = get_supabase_client().table("studio_config").select("config_value").eq(
                 "config_key", key
             ).execute()
 
@@ -327,7 +332,7 @@ class DatabaseManager:
         """Set configuration value"""
         try:
             # Upsert
-            result = service_client.table("studio_config").upsert({
+            result = get_service_client().table("studio_config").upsert({
                 "config_key": key,
                 "config_value": value,
                 "updated_at": datetime.now().isoformat()
@@ -342,7 +347,7 @@ class DatabaseManager:
     async def get_all_config(self) -> Dict[str, str]:
         """Get all configuration"""
         try:
-            result = supabase.table("studio_config").select("*").execute()
+            result = get_supabase_client().table("studio_config").select("*").execute()
 
             return {row["config_key"]: row["config_value"] for row in result.data}
 
@@ -355,7 +360,7 @@ class DatabaseManager:
     async def get_faqs(self, active_only: bool = True) -> List[Dict]:
         """Get FAQ knowledge base"""
         try:
-            query = supabase.table("faq_knowledge").select("*")
+            query = get_supabase_client().table("faq_knowledge").select("*")
 
             if active_only:
                 query = query.eq("active", True)
@@ -378,7 +383,7 @@ class DatabaseManager:
                 "created_at": datetime.now().isoformat()
             }
 
-            result = service_client.table("faq_knowledge").insert(data).execute()
+            result = get_service_client().table("faq_knowledge").insert(data).execute()
             return result.data[0] if result.data else None
 
         except Exception as e:
@@ -390,7 +395,7 @@ class DatabaseManager:
         try:
             update_data["updated_at"] = datetime.now().isoformat()
 
-            result = service_client.table("faq_knowledge").update(update_data).eq("id", faq_id).execute()
+            result = get_service_client().table("faq_knowledge").update(update_data).eq("id", faq_id).execute()
             return len(result.data) > 0
 
         except Exception as e:
@@ -400,7 +405,7 @@ class DatabaseManager:
     async def delete_faq(self, faq_id: str) -> bool:
         """Delete FAQ"""
         try:
-            result = service_client.table("faq_knowledge").delete().eq("id", faq_id).execute()
+            result = get_service_client().table("faq_knowledge").delete().eq("id", faq_id).execute()
             return True
 
         except Exception as e:
