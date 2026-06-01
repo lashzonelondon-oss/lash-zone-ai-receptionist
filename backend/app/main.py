@@ -10,12 +10,9 @@ import base64
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
-import wave
-import io
 
 from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import VoiceResponse, Start, Stream, Connect
-from twilio.http.http_client import TwilioHttpClient
 
 # Lazy initialization of Twilio client
 _twilio_client = None
