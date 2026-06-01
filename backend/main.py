@@ -1,4 +1,4 @@
-# build-bump: 1780306735357
+# build-bump: 1780307988442
 """
 Lash Zone London AI Receptionist - Entry Point
 Railway deployment entry point for FastAPI app
