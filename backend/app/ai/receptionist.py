@@ -161,6 +161,8 @@ class LashZoneReceptionist:
         self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         self.model = os.environ.get("AI_MODEL", "gpt-4o")
         self.voice = os.environ.get("AI_VOICE", "alloy")
+        self.max_tokens = 1500  # Default, loaded from config
+        self.min_sentences = 5  # Minimum sentences per response
         self._system_prompt = None
         self._config_loaded = False
 
@@ -192,7 +194,14 @@ class LashZoneReceptionist:
                     if isinstance(ai_settings, str):
                         import json
                         ai_settings = json.loads(ai_settings)
+
+                    # Load system prompt
                     self._system_prompt = ai_settings.get("system_prompt", FALLBACK_SYSTEM_PROMPT)
+
+                    # Load AI settings
+                    if isinstance(ai_settings, dict):
+                        self.max_tokens = ai_settings.get("max_tokens", 1500)
+                        self.min_sentences = ai_settings.get("min_response_sentences", 5)
                     self._config_loaded = True
                     print("✅ Loaded AI config from database")
                     return
@@ -256,16 +265,38 @@ class LashZoneReceptionist:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
-            max_tokens=1500,  # High limit for comprehensive responses
+            max_tokens=self.max_tokens,  # Loaded from database config
             temperature=0.7
         )
 
         ai_response = response.choices[0].message.content
 
+        # Ensure minimum sentences by adding a system hint if response is too short
+        if self._count_sentences(ai_response) < self.min_sentences:
+            messages.append({"role": "assistant", "content": ai_response})
+            messages.append({
+                "role": "system",
+                "content": f"IMPORTANT: Your previous response was too short (under {self.min_sentences} sentences). Please expand with more detail, enthusiasm, and follow-up questions."
+            })
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=self.max_tokens,
+                temperature=0.7
+            )
+            ai_response = response.choices[0].message.content
+
         # Add to conversation history
         call_context.add_message("assistant", ai_response)
 
         return ai_response
+
+    def _count_sentences(self, text: str) -> int:
+        """Count approximate number of sentences in text"""
+        import re
+        # Count sentence-ending punctuation
+        sentences = re.split(r'[.!?]+', text)
+        return len([s for s in sentences if s.strip()])
 
     def _should_escalate(self, message: str) -> bool:
         """Check if message contains escalation keywords"""
