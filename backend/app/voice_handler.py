@@ -107,11 +107,22 @@ class TwilioVoiceHandler:
             twilio_number = from_number or os.environ.get("TWILIO_PHONE_NUMBER")
             to_e164 = self._to_e164(to_number)
             print(f"SMS attempt -> to={to_e164} from={twilio_number} sid_set={bool(account_sid)} token_set={bool(auth_token)}")
-            if not all([account_sid, auth_token, twilio_number]):
-                print("SMS not sent: missing Twilio credentials/number env vars")
+            messaging_service_sid_pre = os.environ.get("TWILIO_MESSAGING_SERVICE_SID")
+            if not account_sid or not auth_token or not (twilio_number or messaging_service_sid_pre):
+                print("SMS not sent: missing Twilio credentials / sender (number or messaging service)")
                 return False
             client = Client(account_sid, auth_token)
-            msg = client.messages.create(body=message, from_=twilio_number, to=to_e164)
+            messaging_service_sid = os.environ.get("TWILIO_MESSAGING_SERVICE_SID")
+            if messaging_service_sid:
+                # Preferred: send via Messaging Service (required for compliant UK delivery)
+                print(f"SMS via Messaging Service {messaging_service_sid}")
+                msg = client.messages.create(
+                    body=message,
+                    messaging_service_sid=messaging_service_sid,
+                    to=to_e164,
+                )
+            else:
+                msg = client.messages.create(body=message, from_=twilio_number, to=to_e164)
             print(f"SMS sent OK: sid={msg.sid} status={msg.status} to={to_e164}")
             return True
         except Exception as e:
