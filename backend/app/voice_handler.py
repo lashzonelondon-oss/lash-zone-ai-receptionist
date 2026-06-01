@@ -1,22 +1,12 @@
 """
-Voice Handler - Twilio Media Stream Integration
-Processes audio streams and generates AI responses
+Voice Handler - Twilio Gather-based AI Receptionist
+Uses Twilio speech recognition + OpenAI for conversation
+No WebSockets required - simple, reliable, production-ready
 """
 
 import os
-import json
-import base64
 from typing import Optional, Dict, Any
 from datetime import datetime
-
-from twilio.rest import Client as TwilioClient
-
-# Twilio client
-twilio_account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-twilio_auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-twilio_phone = os.environ.get("TWILIO_PHONE_NUMBER")
-
-twilio_client = TwilioClient(twilio_account_sid, twilio_auth_token)
 
 
 class CallSession:
@@ -26,154 +16,85 @@ class CallSession:
         self.call_sid = call_sid
         self.caller_number = caller_number
         self.start_time = datetime.now()
-        self.stream_sid: Optional[str] = None
         self.transcript = []
-        self.context_data = {}
         self.is_active = True
-        self.client_name: Optional[str] = None
-        self.service_interest: Optional[str] = None
-        self.needs_booking: bool = False
-        self.needs_escalation: bool = False
 
 
-class VoiceHandler:
-    """Handles Twilio voice integration and audio processing"""
+class TwilioVoiceHandler:
+    """
+    Handles Twilio voice integration for the AI receptionist.
+    Uses Twilio <Gather> for speech recognition and <Say> for responses.
+    """
 
     def __init__(self):
         self.active_calls: Dict[str, CallSession] = {}
-        self.base_url = os.environ.get("BASE_URL", "https://your-domain.com")
         self.studio_name = os.environ.get("STUDIO_NAME", "Lash Zone London")
-        self.owner_phone = os.environ.get("OWNER_PHONE", "")
-        self.booking_url = os.environ.get("BOOKING_URL", "")
+        self.base_url = os.environ.get("BASE_URL", "https://talented-fulfillment-production-8f33.up.railway.app")
 
     def get_incoming_call_twiml(self) -> str:
-        """Generate TwiML for incoming calls - connects to WebSocket stream"""
-        # Strip protocol from base_url for wss:// URL
-        ws_host = self.base_url.replace("https://", "").replace("http://", "")
+        """Generate TwiML for incoming calls - greets caller and starts gathering speech"""
+        base_url = self.base_url.rstrip("/")
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Amy" language="en-GB">
-        Thank you for calling Lash Zone London! I'm the studio receptionist — how can I help you today? Whether you'd like to book an appointment, find out about our treatments, or have any questions, I'm here for you.
-    </Say>
-    <Connect>
-        <Stream url="wss://{ws_host}/ws/voice" name="ai-receptionist" track="inbound_track">
-            <Parameter name="studioName" value="{self.studio_name}"/>
-        </Stream>
-    </Connect>
+    <Say voice="Polly.Amy" language="en-GB">Thank you for calling Lash Zone London! How can I help you today?</Say>
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
+        <Say voice="Polly.Amy" language="en-GB">Please go ahead and speak.</Say>
+    </Gather>
+    <Say voice="Polly.Amy" language="en-GB">I didn't catch that. Please call back and I'll be happy to help. Goodbye!</Say>
 </Response>"""
         return twiml
 
     def create_incoming_call_webhook_response(self) -> str:
-        """Alias for get_incoming_call_twiml — called by routes.py webhook handler"""
+        """Alias for get_incoming_call_twiml - called by routes.py webhook handler"""
         return self.get_incoming_call_twiml()
 
     def get_or_create_session(self, call_sid: str, caller_number: str) -> CallSession:
-        """Get existing session or create new"""
         if call_sid not in self.active_calls:
             self.active_calls[call_sid] = CallSession(call_sid, caller_number)
         return self.active_calls[call_sid]
 
-    def end_session(self, call_sid: str) -> Optional[CallSession]:
-        """End and return session data"""
+    def end_session(self, call_sid: str):
         if call_sid in self.active_calls:
-            session = self.active_calls[call_sid]
-            session.is_active = False
-            return session
-        return None
+            self.active_calls[call_sid].is_active = False
 
-    def send_sms(self, to_number: str, message: str) -> Dict[str, Any]:
-        """Send SMS via Twilio"""
+    def get_gather_response_twiml(self, ai_response_text: str, call_sid: str, is_final: bool = False) -> str:
+        """Generate TwiML to speak the AI response and gather next input"""
+        base_url = self.base_url.rstrip("/")
+        safe_text = ai_response_text.replace("&", "and").replace("<", "").replace(">", "").replace('"', "'")
+        if is_final:
+            return f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Amy" language="en-GB">{safe_text}</Say>
+    <Hangup/>
+</Response>"""
+        return f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Amy" language="en-GB">{safe_text}</Say>
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
+    </Gather>
+    <Say voice="Polly.Amy" language="en-GB">Is there anything else I can help you with today?</Say>
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
+    </Gather>
+    <Hangup/>
+</Response>"""
+
+    def send_sms(self, to_number: str, message: str, from_number: Optional[str] = None) -> bool:
+        """Send an SMS message via Twilio"""
         try:
-            # Format number if needed
-            if not to_number.startswith("+"):
-                to_number = f"+{to_number}"
-
-            sent = twilio_client.messages.create(
-                body=message,
-                from_=twilio_phone,
-                to=to_number
-            )
-
-            return {
-                "success": True,
-                "message_sid": sent.sid,
-                "status": sent.status
-            }
+            import os
+            from twilio.rest import Client
+            account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+            auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+            twilio_number = from_number or os.environ.get("TWILIO_PHONE_NUMBER")
+            if not all([account_sid, auth_token, twilio_number]):
+                return False
+            client = Client(account_sid, auth_token)
+            client.messages.create(body=message, from_=twilio_number, to=to_number)
+            return True
         except Exception as e:
-            print(f"SMS error: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-
-    def send_booking_link(self, phone_number: str) -> Dict[str, Any]:
-        """Send booking link via SMS"""
-        if self.booking_url:
-            message = (
-                f"Thanks for calling {self.studio_name}! "
-                f"Ready to book your appointment? Click here: {self.booking_url} "
-                f"We look forward to seeing you soon!"
-            )
-        else:
-            message = (
-                f"Thanks for calling {self.studio_name}! "
-                f"Visit our website to book your appointment online. "
-                f"We look forward to seeing you soon!"
-            )
-
-        return self.send_sms(phone_number, message)
-
-    def send_escalation_alert(self, client_name: str, client_phone: str,
-                             issue_summary: str, priority: str = "normal") -> Dict[str, Any]:
-        """Alert owner about escalation"""
-        if not self.owner_phone:
-            return {"success": False, "error": "No owner phone configured"}
-
-        message = (
-            f"ESCALATION ALERT - {self.studio_name}\n"
-            f"Client: {client_name}\n"
-            f"Phone: {client_phone}\n"
-            f"Issue: {issue_summary}\n"
-            f"Priority: {priority.upper()}\n"
-            f"Please callback ASAP."
-        )
-
-        return self.send_sms(self.owner_phone, message)
-
-    def forward_to_human(self, call_sid: str) -> Optional[str]:
-        """Forward active call to human"""
-        try:
-            if not self.owner_phone:
-                return None
-
-            # Create a new call to owner
-            call = twilio_client.calls.create(
-                to=self.owner_phone,
-                from_=twilio_phone,
-                status_callback=f"{self.base_url}/webhook/forward-status",
-                status_callback_method="POST"
-            )
-
-            return call.sid
-
-        except Exception as e:
-            print(f"Forward error: {e}")
-            return None
-
-    def get_call_recording(self, call_sid: str) -> Optional[str]:
-        """Get recording URL for a call"""
-        try:
-            recordings = twilio_client.recordings.list(call_sid=call_sid)
-
-            if recordings:
-                recording = recordings[0]
-                return f"https://api.twilio.com{recording.uri.replace('.json', '.mp3')}"
-
-        except Exception as e:
-            print(f"Recording fetch error: {e}")
-
-        return None
+            print(f"SMS send error: {e}")
+            return False
 
 
-# Singleton instance
-voice_handler = VoiceHandler()
+# Module-level singleton
+voice_handler = TwilioVoiceHandler()
