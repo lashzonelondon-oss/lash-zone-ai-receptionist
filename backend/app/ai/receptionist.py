@@ -185,12 +185,12 @@ class LashZoneReceptionist:
             import httpx
             base_url = os.environ.get("BASE_URL", "https://talented-fulfillment-production-8f33.up.railway.app")
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"{base_url}/api/config", timeout=5.0)
+                response = await client.get(f"{base_url}/admin/config", timeout=5.0)
                 if response.status_code == 200:
                     data = response.json()
-                    # Handle different response formats
-                    config_data = data.get("data", data)
-                    ai_settings = config_data.get("ai_settings", config_data.get("value", {}))
+                    # Handle response format: {"config": {"ai_settings": {...}}}
+                    config = data.get("config", data)
+                    ai_settings = config.get("ai_settings", config.get("value", {}))
                     if isinstance(ai_settings, str):
                         import json
                         ai_settings = json.loads(ai_settings)
