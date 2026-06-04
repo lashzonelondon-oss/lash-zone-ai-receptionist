@@ -32,39 +32,6 @@ class TwilioVoiceHandler:
         self._receptionist = None  # Set by startup via set_receptionist()
         self.base_url = os.environ.get("BASE_URL", "https://talented-fulfillment-production-8f33.up.railway.app")
 
-Voice Handler - Twilio Gather-based AI Receptionist
-Uses Twilio speech recognition + OpenAI for conversation
-No WebSockets required - simple, reliable, production-ready
-"""
-
-import os
-from typing import Optional, Dict, Any
-from datetime import datetime
-
-
-class CallSession:
-    """Represents an active call session"""
-
-    def __init__(self, call_sid: str, caller_number: str):
-        self.call_sid = call_sid
-        self.caller_number = caller_number
-        self.start_time = datetime.now()
-        self.transcript = []
-        self.is_active = True
-
-
-class TwilioVoiceHandler:
-    """
-    Handles Twilio voice integration for the AI receptionist.
-    Uses Twilio <Gather> for speech recognition and <Say> for responses.
-    """
-
-    def __init__(self):
-        self.active_calls: Dict[str, CallSession] = {}
-        self.studio_name = os.environ.get("STUDIO_NAME", "Lash Zone London")
-        self._receptionist = None  # Set by startup via set_receptionist()
-        self.base_url = os.environ.get("BASE_URL", "https://talented-fulfillment-production-8f33.up.railway.app")
-
     def get_incoming_call_twiml(self) -> str:
         """Generate TwiML for incoming calls - greets caller and starts gathering speech"""
         base_url = self.base_url.rstrip("/")
@@ -108,10 +75,10 @@ class TwilioVoiceHandler:
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Amy-Neural" language="en-GB">{safe_text}</Say>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="8" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
     </Gather>
     <Say voice="Polly.Amy-Neural" language="en-GB">Is there anything else I can help you with today?</Say>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="8" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
     </Gather>
     <Hangup/>
 </Response>"""
