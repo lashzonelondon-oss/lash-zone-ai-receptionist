@@ -129,7 +129,7 @@ async def gather_response(request: Request):
         # NOTE: SMS sending is currently disabled. We are online-booking only and the
         # receptionist verbally directs callers to the website instead of texting a link.
         # Set BOOKING_SMS_ENABLED = True to re-enable the SMS booking link.
-        BOOKING_SMS_ENABLED = False
+        BOOKING_SMS_ENABLED = True
         try:
             wants = BOOKING_SMS_ENABLED and getattr(call_context, "needs_booking_link", False)
             already = getattr(session, "booking_link_sent", False)
@@ -139,7 +139,7 @@ async def gather_response(request: Request):
                 if booking_url:
                     sent_ok = voice_handler.send_sms(
                         to_number=caller_number,
-                        message=f"Hi from Lash Zone London! Here's the link to book your appointment: {booking_url}. We can't wait to see you!"
+                    message="Thank you for contacting Lash Zone London.\n\nTo view availability and make a booking, please visit:\nhttps://www.lashzonelondon.com\n\nWe look forward to seeing you."
                     )
                     print(f"Booking-link SMS send result: {sent_ok}")
                     if sent_ok:
