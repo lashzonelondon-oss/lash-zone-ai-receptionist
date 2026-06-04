@@ -61,6 +61,23 @@ async def incoming_call(request: Request):
     return Response(content=twiml_response, media_type="application/xml")
 
 
+@app.post("/webhook/gather-retry")
+async def gather_retry(request: Request):
+    """
+    Second-chance gather: called when initial Gather times out with no speech.
+    Plays a prompt and opens one more Gather back to /webhook/gather.
+    """
+    base = voice_handler.base_url.rstrip("/")
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="Polly.Amy-Neural" language="en-GB">Sorry, I didn't catch that. How can I help you today?</Say>
+    <Gather input="speech" action="{base}/webhook/gather" method="POST" speechTimeout="3" timeout="10" language="en-GB" enhanced="true"></Gather>
+    <Say voice="Polly.Amy-Neural" language="en-GB">I'm having trouble hearing you. Please call back and we'll be happy to help. Goodbye!</Say>
+    <Hangup/>
+</Response>"""
+    return Response(content=twiml, media_type="application/xml")
+
+
 @app.post("/webhook/gather")
 async def gather_response(request: Request):
     """
