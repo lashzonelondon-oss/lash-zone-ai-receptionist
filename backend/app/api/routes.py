@@ -43,6 +43,9 @@ app.add_middleware(
 
 # ==================== TWILIO WEBHOOKS ====================
 
+# Global session store shared between WebSocket and webhooks
+CALL_SESSIONS: Dict[str, Dict] = {}
+
 @app.post("/webhook/incoming-call")
 async def incoming_call(request: Request):
     """
@@ -54,6 +57,15 @@ async def incoming_call(request: Request):
     caller_number = form_data.get("From", "")
 
     print(f"Incoming call from {caller_number}, SID: {call_sid}")
+
+    # Store caller number for WebSocket and call-status webhook
+    if call_sid:
+        CALL_SESSIONS[call_sid] = {
+            "caller_number": caller_number,
+            "start_time": datetime.now(),
+            "transcript": [],
+            "context_data": {}
+        }
 
     # Get TwiML response
     twiml_response = voice_handler.create_incoming_call_webhook_response()
@@ -212,22 +224,38 @@ async def call_status(request: Request):
     """
     form_data = await request.form()
     call_sid = form_data.get("CallSid", "")
-    call_status = form_data.get("CallStatus", "")
+    call_status_val = form_data.get("CallStatus", "")
 
-    print(f"Call {call_sid} status: {call_status}")
+    print(f"Call {call_sid} status: {call_status_val}")
 
-    if call_status in ["completed", "failed", "busy", "no-answer"]:
-        session = voice_handler.end_session(call_sid)
+    if call_status_val in ["completed", "failed", "busy", "no-answer"]:
+        # Check global session store first
+        session = CALL_SESSIONS.get(call_sid)
 
         if session:
+            # Calculate duration
+            duration = (datetime.now() - session["start_time"]).seconds
+
+            # Make sure outcome is set even if empty
+            outcome = session.get("context_data", {}).get("outcome", "unknown")
+            if not outcome:
+                outcome = "info_provided"  # Default outcome for calls without bookings/escalations
+
             # Save call to database
             await db.create_call({
-                "caller_number": session.caller_number,
-                "duration_seconds": (datetime.now() - session.start_time).seconds,
-                "outcome": session.context_data.get("outcome", "unknown"),
-                "transcript": session.transcript,
+                "caller_number": session["caller_number"],
+                "duration_seconds": duration,
+                "outcome": outcome,
+                "transcript_json": json.dumps(session.get("transcript", [])),
                 "recording_url": voice_handler.get_call_recording_url(call_sid)
             })
+
+            print(f"✅ Call logged to database: {session['caller_number']}, duration: {duration}s, outcome: {outcome}")
+
+            # Clean up session
+            del CALL_SESSIONS[call_sid]
+        else:
+            print(f"⚠️ No session found for call {call_sid}")
 
     return Response(content="<?xml version='1.0' encoding='UTF-8'?><Response></Response>", media_type="application/xml")
 
@@ -306,38 +334,116 @@ manager = ConnectionManager()
 async def voice_websocket(websocket: WebSocket):
     """
     WebSocket endpoint for real-time voice conversation
+    Twilio sends CallSid in the stream event data
     """
-    call_sid = str(uuid.uuid4())
+    call_sid = None
+    caller_number = "unknown"
 
-    await manager.connect(websocket, call_sid)
+    # Wait for first message with call metadata
+    try:
+        init_data = await websocket.receive_json()
+        if init_data.get("event") == "start":
+            stream = init_data.get("stream", {})
+            call_sid = stream.get("callSid") or init_data.get("callSid")
+            caller_number = stream.get("caller", caller_number)
+    except:
+        pass
+
+    # Fallback: generate a new call_sid if not provided
+    if not call_sid:
+        call_sid = str(uuid.uuid4())
+        # Create session
+        CALL_SESSIONS[call_sid] = {
+            "caller_number": caller_number,
+            "start_time": datetime.now(),
+            "transcript": [],
+            "context_data": {}
+        }
+
+    await websocket.accept()
+
+    # Update the stored session with caller_number if we have it
+    if call_sid in CALL_SESSIONS:
+        CALL_SESSIONS[call_sid]["caller_number"] = caller_number
 
     try:
         while True:
-            # Receive audio from client
+            # Receive messages from Twilio
             data = await websocket.receive_json()
 
-            if data.get("type") == "audio":
-                # Decode audio
-                audio_bytes = base64.b64decode(data.get("data", ""))
+            if isinstance(data, dict):
+                event = data.get("event")
 
-                if audio_bytes:
-                    # Process through AI
-                    response_text = await voice_handler.handle_stream_audio(audio_bytes, call_sid)
+                if event == "start":
+                    # Stream started
+                    stream = data.get("stream", {})
+                    call_sid = stream.get("callSid") or call_sid
+                    caller_number = stream.get("caller", caller_number)
 
-                    if response_text:
-                        # Generate audio response
-                        audio_response = await receptionist.generate_speech(response_text)
+                    if call_sid not in CALL_SESSIONS:
+                        CALL_SESSIONS[call_sid] = {
+                            "caller_number": caller_number,
+                            "start_time": datetime.now(),
+                            "transcript": [],
+                            "context_data": {}
+                        }
+                    else:
+                        CALL_SESSIONS[call_sid]["caller_number"] = caller_number
 
-                        # Send response
-                        await manager.send_audio(call_sid, audio_response)
+                    # Generate greeting through AI
+                    greeting_context = CallContext(caller_number=caller_number)
+                    greeting = await receptionist.generate_response(
+                        greeting_context,
+                        "Hello, introduce yourself and offer help"
+                    )
+                    audio_response = await receptionist.generate_speech(greeting)
+                    await websocket.send_json({
+                        "event": "media",
+                        "media": {
+                            ".payload": base64.b64encode(audio_response).decode()
+                        }
+                    })
 
-            elif data.get("type") == "hangup":
-                break
+                elif event == "media":
+                    # Process audio
+                    media = data.get("media", {})
+                    payload = media.get("payload", "")
+
+                    if payload:
+                        audio_bytes = base64.b64decode(payload)
+
+                        # Process through AI
+                        response_text = await voice_handler.handle_stream_audio(audio_bytes, call_sid)
+
+                        if response_text and call_sid in CALL_SESSIONS:
+                            # Store transcript
+                            CALL_SESSIONS[call_sid]["transcript"].append({
+                                "role": "user",
+                                "content": "voice_input"
+                            })
+                            CALL_SESSIONS[call_sid]["transcript"].append({
+                                "role": "assistant",
+                                "content": response_text
+                            })
+
+                            # Generate audio response
+                            audio_response = await receptionist.generate_speech(response_text)
+                            await websocket.send_json({
+                                "event": "media",
+                                "media": {
+                                    "payload": base64.b64encode(audio_response).decode()
+                                }
+                            })
+
+                elif event == "stop":
+                    # Stream ended
+                    break
 
     except WebSocketDisconnect:
         pass
     finally:
-        manager.disconnect(call_sid)
+        if call_sid in CALL_SESSIONS:
+            del CALL_SESSIONS[call_sid]
 
 
 # ==================== REST API ENDPOINTS ====================

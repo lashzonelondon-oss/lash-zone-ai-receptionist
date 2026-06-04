@@ -26,17 +26,22 @@ export function Dashboard() {
         getConfig(),
       ]);
 
+      // Ensure arrays
+      const callsArray = Array.isArray(calls) ? calls : [];
+      const appointmentsArray = Array.isArray(appointments) ? appointments : [];
+      const escalationsArray = Array.isArray(escalations) ? escalations : [];
+
       const today = new Date().toISOString().split('T')[0];
 
       setStats({
-        totalCalls: calls.length,
-        todayCalls: calls.filter((c: any) => c.created_at?.startsWith(today)).length,
-        pendingEscalations: escalations.length,
-        todayAppointments: appointments.filter((a: any) => a.requested_date === today).length,
+        totalCalls: callsArray.length,
+        todayCalls: callsArray.filter((c: any) => c.created_at?.startsWith(today)).length,
+        pendingEscalations: escalationsArray.length,
+        todayAppointments: appointmentsArray.filter((a: any) => a.requested_date === today).length,
       });
 
-      setRecentCalls(calls.slice(0, 5));
-      setConfig(cfg);
+      setRecentCalls(callsArray.slice(0, 5));
+      setConfig(cfg || {});
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -190,7 +195,7 @@ export function Dashboard() {
                     {call.outcome?.replace('_', ' ') || 'Unknown'}
                   </span>
                   <span className="text-sm text-gray-500">
-                    {formatDuration(call.duration_seconds)}
+                    {formatDuration(call.duration)}
                   </span>
                 </div>
               </div>

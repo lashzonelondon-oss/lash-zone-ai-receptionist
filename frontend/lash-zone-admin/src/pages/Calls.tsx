@@ -131,7 +131,7 @@ export function Calls() {
                         <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                           <span className="flex items-center gap-1">
                             <Clock className="w-3.5 h-3.5" />
-                            {formatDuration(call.duration_seconds)}
+                            {formatDuration(call.duration)}
                           </span>
                           <span>{date}</span>
                           <span>{time}</span>
@@ -175,7 +175,7 @@ export function Calls() {
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-500 mb-1">Duration</p>
-                    <p className="font-semibold text-gray-900">{formatDuration(selectedCall.duration_seconds)}</p>
+                    <p className="font-semibold text-gray-900">{formatDuration(selectedCall.duration)}</p>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4">
                     <p className="text-sm text-gray-500 mb-1">Date</p>
@@ -196,29 +196,45 @@ export function Calls() {
                 </div>
 
                 {/* Transcript */}
-                {selectedCall.transcript_json && selectedCall.transcript_json.length > 0 && (
+                {selectedCall.transcript && selectedCall.transcript.length > 0 && (
                   <div>
                     <p className="text-sm text-gray-500 mb-3">Transcript</p>
                     <div className="space-y-3 bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
-                      {selectedCall.transcript_json.map((msg: any, index: number) => (
-                        <div
-                          key={index}
-                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className={`max-w-[80%] px-4 py-2 rounded-2xl ${
-                              msg.role === 'user'
-                                ? 'bg-pink-500 text-white rounded-br-md'
-                                : 'bg-white border border-gray-200 text-gray-900 rounded-bl-md'
-                            }`}
-                          >
-                            <p className="text-sm font-medium mb-1 opacity-70">
-                              {msg.role === 'user' ? 'Caller' : 'Luna (AI)'}
-                            </p>
-                            <p>{msg.content}</p>
-                          </div>
-                        </div>
-                      ))}
+                      {(() => {
+                        try {
+                          // Try to parse as JSON array
+                          const parsed = JSON.parse(selectedCall.transcript);
+                          if (Array.isArray(parsed)) {
+                            return parsed.map((msg: any, index: number) => (
+                              <div
+                                key={index}
+                                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                              >
+                                <div
+                                  className={`max-w-[80%] px-4 py-2 rounded-2xl ${
+                                    msg.role === 'user'
+                                      ? 'bg-pink-500 text-white rounded-br-md'
+                                      : 'bg-white border border-gray-200 text-gray-900 rounded-bl-md'
+                                  }`}
+                                >
+                                  <p className="text-sm font-medium mb-1 opacity-70">
+                                    {msg.role === 'user' ? 'Caller' : 'Luna (AI)'}
+                                  </p>
+                                  <p>{msg.content}</p>
+                                </div>
+                              </div>
+                            ));
+                          }
+                        } catch {
+                          // If not JSON, display as plain text
+                          return (
+                            <div className="text-gray-700 whitespace-pre-wrap">
+                              {selectedCall.transcript}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                 )}

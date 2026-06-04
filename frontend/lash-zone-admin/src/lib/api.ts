@@ -22,12 +22,16 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<Api
 
     const data = await response.json();
 
+    // Handle nested data structures
+    const resultData = data?.data ?? data ?? null;
+
     if (!response.ok) {
-      return { success: false, error: data.error || 'Request failed' };
+      return { success: false, error: data?.error || 'Request failed' };
     }
 
-    return { success: true, data };
+    return { success: true, data: resultData };
   } catch (error) {
+    console.error(`API Error [${endpoint}]:`, error);
     return { success: false, error: error instanceof Error ? error.message : 'Network error' };
   }
 }
@@ -38,9 +42,10 @@ export interface Call {
   id: string;
   call_sid: string;
   caller_number: string;
-  duration_seconds: number;
-  outcome: string;
-  transcript_json: any[];
+  duration: number;  // Field in database is 'duration', not 'duration_seconds'
+  outcome: string | null;
+  transcript: string | null;  // Field in database is 'transcript', not 'transcript_json'
+  escalated?: boolean;
   recording_url?: string;
   created_at: string;
 }
