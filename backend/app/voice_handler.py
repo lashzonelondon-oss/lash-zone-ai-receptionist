@@ -38,10 +38,10 @@ class TwilioVoiceHandler:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Amy-Neural" language="en-GB">Thank you for calling Lash Zone London! How can I help you today?</Say>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="10" language="en-GB" enhanced="true">
         <Say voice="Polly.Amy-Neural" language="en-GB">Please go ahead and speak.</Say>
     </Gather>
-    <Say voice="Polly.Amy-Neural" language="en-GB">I didn't catch that. Please call back and I'll be happy to help. Goodbye!</Say>
+    <Redirect>/webhook/gather-retry</Redirect>
 </Response>"""
         return twiml
 
