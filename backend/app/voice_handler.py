@@ -75,10 +75,10 @@ class TwilioVoiceHandler:
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Amy-Neural" language="en-GB">{safe_text}</Say>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="8" language="en-GB" enhanced="true">
     </Gather>
     <Say voice="Polly.Amy-Neural" language="en-GB">Is there anything else I can help you with today?</Say>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="8" language="en-GB" enhanced="true">
     </Gather>
     <Hangup/>
 </Response>"""
