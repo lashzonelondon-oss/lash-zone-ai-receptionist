@@ -145,6 +145,7 @@ async def gather_response(request: Request):
                     if sent_ok:
                         call_context.booking_link_sent = True
                         session.booking_link_sent = True
+                        ai_response += " We're often busy with clients, so all bookings are made online. I've just sent the booking link directly to your phone."
                 else:
                     print("Booking-link SMS NOT sent: BOOKING_URL env var is empty")
         except Exception as sms_err:
