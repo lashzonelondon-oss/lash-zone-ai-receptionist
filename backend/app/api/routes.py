@@ -81,9 +81,9 @@ async def gather_response(request: Request):
     if not speech_result:
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="Polly.Amy" language="en-GB">I'm sorry, I didn't quite catch that. Could you please repeat that for me?</Say>
-    <Gather input="speech" action="{base}/webhook/gather" method="POST" speechTimeout="auto" language="en-GB" enhanced="true"></Gather>
-    <Say voice="Polly.Amy" language="en-GB">I'm having trouble hearing you. Please call back and we'll be happy to help. Goodbye!</Say>
+    <Say voice="Polly.Amy-Neural" language="en-GB">I'm sorry, I didn't quite catch that. Could you please repeat that for me?</Say>
+    <Gather input="speech" action="{base}/webhook/gather" method="POST" speechTimeout="3" timeout="10" language="en-GB" enhanced="true"></Gather>
+    <Say voice="Polly.Amy-Neural" language="en-GB">I'm having trouble hearing you. Please call back and we'll be happy to help. Goodbye!</Say>
     <Hangup/>
 </Response>"""
         return Response(content=twiml, media_type="application/xml")
