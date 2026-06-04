@@ -337,14 +337,7 @@ class LashZoneReceptionist:
         ]
         if any(phrase in message_lower for phrase in booking_phrases):
             return True
-        # Affirmative confirmation to "shall I send the link to this number?"
-        affirmatives = [
-            "yes", "yeah", "yep", "yes please", "sure", "go ahead",
-            "that's fine", "thats fine", "that works", "sounds good",
-            "ok", "okay", "please do", "perfect", "great", "lovely",
-        ]
-        stripped = message_lower.strip().strip(".!? ")
-        return stripped in affirmatives
+        return False
 
     def _wants_followup(self, message: str) -> bool:
         """Detect whether the caller is asking for a follow-up, callback, or more information."""
