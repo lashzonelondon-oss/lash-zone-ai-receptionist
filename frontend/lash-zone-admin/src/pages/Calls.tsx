@@ -218,7 +218,7 @@ export function Calls() {
                                   }`}
                                 >
                                   <p className="text-sm font-medium mb-1 opacity-70">
-                                    {msg.role === 'user' ? 'Caller' : 'Luna (AI)'}
+                                    {msg.role === 'user' ? 'Caller' : 'AI Receptionist'}
                                   </p>
                                   <p>{msg.content}</p>
                                 </div>
