@@ -23,7 +23,7 @@ import uvicorn
 from ..ai.receptionist import receptionist, CallContext, CallOutcome
 from ..database.supabase_client import db
 from ..voice_handler import voice_handler
-from .notifications import send_followup_email
+from .notifications import send_followup_email, send_call_transcript_email
 
 # Create FastAPI app
 app = FastAPI(
@@ -251,6 +251,18 @@ async def call_status(request: Request):
             })
 
             print(f"✅ Call logged to database: {session['caller_number']}, duration: {duration}s, outcome: {outcome}")
+
+            # Send transcript email (wrapped so it can never affect call logging)
+            try:
+                send_call_transcript_email({
+                    "caller_number": session["caller_number"],
+                    "duration_seconds": duration,
+                    "outcome": outcome,
+                    "transcript": session.get("transcript", []),
+                    "created_at": session["start_time"].isoformat(),
+                })
+            except Exception as email_err:
+                print(f"Transcript email error (non-fatal): {repr(email_err)}")
 
             # Clean up session
             del CALL_SESSIONS[call_sid]
