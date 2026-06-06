@@ -136,7 +136,7 @@ def send_call_transcript_email(call_data: Dict[str, Any]) -> bool:
             for msg in transcript:
                 role = msg.get("role", "")
                 content = msg.get("content", "")
-                label = "Caller" if role == "user" else "Luna (AI)"
+                label = "Caller" if role == "user" else "AI"
                 lines.append(f"{label}: {content}")
             transcript_text = "\n".join(lines)
         else:
@@ -175,6 +175,9 @@ def send_call_transcript_email(call_data: Dict[str, Any]) -> bool:
 
         with urllib.request.urlopen(req, timeout=15) as resp:
             print(f"Transcript email sent to {recipient} (status {resp.status})")
+            print(f"TRANSCRIPT_EMAIL_BODY_START")
+            print(body)
+            print(f"TRANSCRIPT_EMAIL_BODY_END")
             return True
 
     except Exception as e:
