@@ -155,7 +155,7 @@ export function Calls() {
       {/* Call Detail Modal */}
       {selectedCall && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden shadow-xl">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden shadow-xl">
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900">Call Details</h2>
               <button
@@ -199,7 +199,7 @@ export function Calls() {
                 {selectedCall.transcript && selectedCall.transcript.length > 0 && (
                   <div>
                     <p className="text-sm text-gray-500 mb-3">Transcript</p>
-                    <div className="space-y-3 bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
+                    <div className="space-y-3 bg-gray-50 rounded-lg p-4">
                       {(() => {
                         try {
                           // Try to parse as JSON array
