@@ -82,7 +82,7 @@ class DatabaseManager:
     async def get_call(self, call_id: str) -> Optional[Dict]:
         """Get call by ID"""
         try:
-            result = get_supabase_client().table("calls").select("*").eq("id", call_id).execute()
+            result = get_service_client().table("calls").select("*").eq("id", call_id).execute()
             return result.data[0] if result.data else None
 
         except Exception as e:
@@ -92,7 +92,7 @@ class DatabaseManager:
     async def get_calls(self, limit: int = 50, offset: int = 0) -> List[Dict]:
         """Get recent calls"""
         try:
-            result = get_supabase_client().table("calls").select("*").order(
+            result = get_service_client().table("calls").select("*").order(
                 "created_at", desc=True
             ).range(offset, offset + limit - 1).execute()
 
@@ -105,7 +105,7 @@ class DatabaseManager:
     async def search_calls(self, query: str) -> List[Dict]:
         """Search calls by caller number or transcript"""
         try:
-            result = get_supabase_client().table("calls").select("*").or_(
+            result = get_service_client().table("calls").select("*").or_(
                 f"caller_number.ilike.%{query}%",
                 f"transcript_json.ilike.%{query}%"
             ).order("created_at", desc=True).execute()
