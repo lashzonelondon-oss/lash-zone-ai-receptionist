@@ -53,9 +53,9 @@ class DatabaseManager:
         try:
             data = {
                 "caller_number": call_data.get("caller_number"),
-                "duration_seconds": call_data.get("duration_seconds", 0),
+                "duration": call_data.get("duration_seconds", 0),
                 "outcome": call_data.get("outcome"),
-                "transcript_json": json.dumps(call_data.get("transcript", [])),
+                "transcript": call_data.get("transcript", []),
                 "recording_url": call_data.get("recording_url"),
                 "created_at": datetime.now().isoformat()
             }
