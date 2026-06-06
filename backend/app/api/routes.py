@@ -241,12 +241,18 @@ async def call_status(request: Request):
             if not outcome:
                 outcome = "info_provided"  # Default outcome for calls without bookings/escalations
 
+            # Bridge to voice_handler session to get the full conversation transcript.
+            # The active conversation (caller + AI turns) lives in voice_handler.active_calls,
+            # not in CALL_SESSIONS, so we read it from there.
+            vh_session = voice_handler.active_calls.get(call_sid)
+            transcript = vh_session.transcript if vh_session else session.get("transcript", [])
+
             # Save call to database
             await db.create_call({
                 "caller_number": session["caller_number"],
                 "duration_seconds": duration,
                 "outcome": outcome,
-                "transcript": session.get("transcript", []),
+                "transcript": transcript,
                 "recording_url": None
             })
 
@@ -258,7 +264,7 @@ async def call_status(request: Request):
                     "caller_number": session["caller_number"],
                     "duration_seconds": duration,
                     "outcome": outcome,
-                    "transcript": session.get("transcript", []),
+                    "transcript": transcript,
                     "created_at": session["start_time"].isoformat(),
                 })
             except Exception as email_err:
