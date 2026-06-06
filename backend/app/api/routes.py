@@ -246,8 +246,8 @@ async def call_status(request: Request):
                 "caller_number": session["caller_number"],
                 "duration_seconds": duration,
                 "outcome": outcome,
-                "transcript_json": json.dumps(session.get("transcript", [])),
-                "recording_url": voice_handler.get_call_recording_url(call_sid)
+                "transcript": session.get("transcript", []),
+                "recording_url": None
             })
 
             print(f"✅ Call logged to database: {session['caller_number']}, duration: {duration}s, outcome: {outcome}")
