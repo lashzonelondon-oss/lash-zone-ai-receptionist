@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, JSONResponse
 from starlette.responses import PlainTextResponse
@@ -91,7 +91,7 @@ async def gather_retry(request: Request):
 
 
 @app.post("/webhook/gather")
-async def gather_response(request: Request):
+async def gather_response(request: Request, background_tasks: BackgroundTasks):
     """
     Handle speech gathered by Twilio - process with AI and respond.
     Core conversation loop for the AI receptionist.
@@ -137,63 +137,62 @@ async def gather_response(request: Request):
         if not ai_response or not ai_response.strip():
             ai_response = "I'm so sorry, could you say that again for me?"
 
-        # Send SMS booking link if the AI flagged it
-        # NOTE: SMS sending is currently disabled. We are online-booking only and the
-        # receptionist verbally directs callers to the website instead of texting a link.
-        # Set BOOKING_SMS_ENABLED = True to re-enable the SMS booking link.
-        BOOKING_SMS_ENABLED = True
-        try:
-            wants = BOOKING_SMS_ENABLED and getattr(call_context, "needs_booking_link", False)
-            already = getattr(session, "booking_link_sent", False)
-            print(f"Booking-link check: needs={wants} already_sent={already} caller={caller_number}")
-            if wants and not already and caller_number not in ("unknown", ""):
-                booking_url = os.environ.get("BOOKING_URL", "")
-                if booking_url:
-                    sent_ok = voice_handler.send_sms(
-                        to_number=caller_number,
-                    message="Thank you for contacting Lash Zone London.\n\nTo view availability and make a booking, please visit:\nhttps://www.lashzonelondon.com\n\nWe look forward to seeing you."
-                    )
-                    print(f"Booking-link SMS send result: {sent_ok}")
-                    if sent_ok:
-                        call_context.booking_link_sent = True
-                        session.booking_link_sent = True
-                        ai_response += " We're often busy with clients, so all bookings are made online. I've just sent the booking link directly to your phone."
-                else:
-                    print("Booking-link SMS NOT sent: BOOKING_URL env var is empty")
-        except Exception as sms_err:
-            print(f"SMS booking link error: {repr(sms_err)}")
+        # Send SMS booking link in background (non-blocking)
+        def _send_booking_sms_bg():
+            try:
+                BOOKING_SMS_ENABLED = True
+                wants = BOOKING_SMS_ENABLED and getattr(call_context, "needs_booking_link", False)
+                already = getattr(session, "booking_link_sent", False)
+                print(f"[BG] Booking-link check: needs={wants} already_sent={already}")
+                if wants and not already and caller_number not in ("unknown", ""):
+                    booking_url = os.environ.get("BOOKING_URL", "")
+                    if booking_url:
+                        sent_ok = voice_handler.send_sms(
+                            to_number=caller_number,
+                            message="Thank you for contacting Lash Zone London.\n\nTo view availability and make a booking, please visit:\nhttps://www.lashzonelondon.com\n\nWe look forward to seeing you."
+                        )
+                        print(f"[BG] Booking-link SMS send result: {sent_ok}")
+                        if sent_ok:
+                            session.booking_link_sent = True
+                    else:
+                        print("[BG] Booking-link SMS NOT sent: BOOKING_URL not set")
+            except Exception as sms_err:
+                print(f"[BG] SMS booking link error: {repr(sms_err)}")
+        background_tasks.add_task(_send_booking_sms_bg)
 
-        # Save & email a follow-up / callback request if the AI flagged it.
-        # NOTE: This feature is disabled by default. Set FOLLOWUP_ENABLED = True
-        # (and configure the follow_ups table + Gmail env vars) to activate it.
-        # All logic is wrapped so it can never affect the live call.
-        FOLLOWUP_ENABLED = True
-        try:
-            wants_followup = FOLLOWUP_ENABLED and getattr(call_context, "needs_followup", False)
-            already_followup = getattr(session, "followup_saved", False)
-            print(f"Follow-up check: needs={wants_followup} already_saved={already_followup} caller={caller_number}")
-            if wants_followup and not already_followup:
-                # Mark immediately so we only ever create one record per call.
-                session.followup_saved = True
-                followup_record = {
-                    "caller_name": getattr(call_context.client_info, "name", None),
-                    "caller_phone": caller_number if caller_number not in ("unknown", "") else None,
-                    "summary": getattr(call_context, "followup_summary", None) or speech_result,
-                    "service_interest": getattr(call_context, "followup_service", None),
-                    "preferred_callback_time": getattr(call_context, "preferred_callback_time", None),
-                    "request_type": "callback",
-                    "call_sid": call_sid,
-                    "status": "pending",
-                    "email_sent": False,
-                }
-                # Save to Supabase FIRST so the request is durable even if email fails.
-                saved = await db.create_followup(followup_record)
-                print(f"Follow-up saved to Supabase: {bool(saved)}")
-                # Then send the email notification (failure here never breaks the call).
-                email_ok = send_followup_email(followup_record)
-                print(f"Follow-up email result: {email_ok}")
-        except Exception as followup_err:
-            print(f"Follow-up handling error: {repr(followup_err)}")
+        # Save follow-up to database and send email in background (non-blocking)
+        def _save_followup_bg():
+            try:
+                import asyncio
+                FOLLOWUP_ENABLED = True
+                wants_followup = FOLLOWUP_ENABLED and getattr(call_context, "needs_followup", False)
+                already_followup = getattr(session, "followup_saved", False)
+                print(f"[BG] Follow-up check: needs={wants_followup} already={already_followup}")
+                if wants_followup and not already_followup:
+                    session.followup_saved = True
+                    followup_record = {
+                        "caller_name": getattr(call_context.client_info, "name", None),
+                        "caller_phone": caller_number if caller_number not in ("unknown", "") else None,
+                        "summary": getattr(call_context, "followup_summary", None) or "Caller requested callback",
+                        "service_interest": getattr(call_context, "followup_service", None),
+                        "preferred_callback_time": getattr(call_context, "preferred_callback_time", None),
+                        "request_type": "callback",
+                        "call_sid": call_sid,
+                        "status": "pending",
+                        "email_sent": False,
+                    }
+                    # Run the async DB save in a new event loop for the background thread
+                    loop = asyncio.new_event_loop()
+                    try:
+                        saved = loop.run_until_complete(db.create_followup(followup_record))
+                        print(f"[BG] Follow-up saved to Supabase: {bool(saved)}")
+                        email_ok = send_followup_email(followup_record)
+                        print(f"[BG] Follow-up email result: {email_ok}")
+                    finally:
+                        loop.close()
+            except Exception as followup_err:
+                print(f"[BG] Follow-up handling error: {repr(followup_err)}")
+        background_tasks.add_task(_save_followup_bg)
 
         # Decide whether the call should end
         outcome = getattr(call_context, "outcome", None)
