@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 
 class CallOutcome(Enum):
@@ -204,7 +204,7 @@ class LashZoneReceptionist:
     """
 
     def __init__(self):
-        self.client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        self.client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
         self.model = os.environ.get("AI_MODEL", "gpt-4o")
         self.voice = os.environ.get("AI_VOICE", "alloy")
         self.max_tokens = 150  # Keep spoken replies short and natural for phone calls
@@ -282,7 +282,7 @@ class LashZoneReceptionist:
             })
 
         # Generate response with comprehensive detail
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             max_tokens=self.max_tokens,  # Loaded from database config
@@ -292,20 +292,6 @@ class LashZoneReceptionist:
         ai_response = response.choices[0].message.content
 
         # Ensure minimum sentences by adding a system hint if response is too short
-        if self._count_sentences(ai_response) < self.min_sentences:
-            messages.append({"role": "assistant", "content": ai_response})
-            messages.append({
-                "role": "system",
-                "content": f"IMPORTANT: Your previous response was too short (under {self.min_sentences} sentences). Please expand with more detail, enthusiasm, and follow-up questions."
-            })
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=self.max_tokens,
-                temperature=0.7
-            )
-            ai_response = response.choices[0].message.content
-
         # Add to conversation history
         call_context.add_message("assistant", ai_response)
 
