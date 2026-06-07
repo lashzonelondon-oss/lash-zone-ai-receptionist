@@ -278,7 +278,17 @@ class LashZoneReceptionist:
             call_context.needs_followup = True
 
         # Build messages for API
-        messages = [{"role": "system", "content": self.system_prompt}]
+        # Inject current UK date/time so the model knows the actual day
+        from zoneinfo import ZoneInfo as _ZoneInfo
+        _uk_now = datetime.now(_ZoneInfo("Europe/London"))
+        _date_ctx = (
+            "\n\nCURRENT DATE AND TIME (UK): "
+            + _uk_now.strftime("%A, %d %B %Y, %H:%M")
+            + " (Europe/London timezone). "
+            "Use this as the real current date and time when answering any questions "
+            "about today, the day of the week, or opening hours."
+        )
+        messages = [{"role": "system", "content": self.system_prompt + _date_ctx}]
 
         # Add conversation history
         for msg in call_context.conversation_history:
