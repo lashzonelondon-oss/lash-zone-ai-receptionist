@@ -39,7 +39,7 @@ class TwilioVoiceHandler:
 <Response>
     <Say voice="Polly.Amy-Neural" language="en-GB">Thank you for calling Lash Zone London! How can I help you today?</Say>
             <Pause length="1"/>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="10" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" timeout="10" language="en-GB" enhanced="true">
         <Say voice="Polly.Amy-Neural" language="en-GB">Please go ahead and speak.</Say>
     </Gather>
     <Redirect>/webhook/gather-retry</Redirect>
@@ -76,10 +76,10 @@ class TwilioVoiceHandler:
         return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="Polly.Amy-Neural" language="en-GB">{safe_text}</Say>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="8" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" timeout="8" language="en-GB" enhanced="true">
     </Gather>
     <Say voice="Polly.Amy-Neural" language="en-GB">Is there anything else I can help you with today?</Say>
-    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="3" timeout="8" language="en-GB" enhanced="true">
+    <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" timeout="8" language="en-GB" enhanced="true">
     </Gather>
     <Hangup/>
 </Response>"""
