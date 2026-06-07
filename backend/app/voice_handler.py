@@ -40,7 +40,6 @@ class TwilioVoiceHandler:
     <Say voice="Polly.Amy-Neural" language="en-GB">Thank you for calling Lash Zone London! How can I help you today?</Say>
             <Pause length="1"/>
     <Gather input="speech" action="{base_url}/webhook/gather" method="POST" speechTimeout="auto" timeout="10" language="en-GB" enhanced="true">
-        <Say voice="Polly.Amy-Neural" language="en-GB">Please go ahead and speak.</Say>
     </Gather>
     <Redirect>/webhook/gather-retry</Redirect>
 </Response>"""
