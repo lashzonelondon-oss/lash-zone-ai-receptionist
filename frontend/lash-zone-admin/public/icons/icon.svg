@@ -1,43 +1,39 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Background -->
-  <rect width="512" height="512" rx="80" fill="#000000"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Purple brand background -->
+  <rect width="512" height="512" fill="#7B5EA7" rx="88"/>
 
-  <!-- Decorative lash arc top -->
-  <path d="M 128 180 Q 256 100 384 180" stroke="#ffffff" stroke-width="6" fill="none" stroke-linecap="round" opacity="0.5"/>
-  <path d="M 148 170 Q 150 140 145 125" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
-  <path d="M 186 155 Q 192 122 188 106" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
-  <path d="M 228 148 Q 236 115 233 98" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
-  <path d="M 270 148 Q 278 115 275 98" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
-  <path d="M 312 155 Q 320 122 318 106" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
-  <path d="M 350 170 Q 358 140 358 125" stroke="#ffffff" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.7"/>
+  <!-- White circle logo area -->
+  <circle cx="256" cy="250" r="205" fill="#FFFFFF"/>
 
-  <!-- LZ Monogram -->
-  <text
-    x="256"
-    y="320"
-    font-family="Georgia, serif"
-    font-size="180"
-    font-weight="bold"
-    fill="#ffffff"
-    text-anchor="middle"
-    dominant-baseline="middle"
-    letter-spacing="-8"
-  >LZ</text>
+  <!-- Curved eyelid base -->
+  <path d="M130 238 Q256 200 382 238" stroke="#E8722A" stroke-width="5.5" fill="none" stroke-linecap="round"/>
 
-  <!-- Studio name -->
-  <text
-    x="256"
-    y="410"
-    font-family="Arial, sans-serif"
-    font-size="36"
-    font-weight="300"
-    fill="#ffffff"
-    text-anchor="middle"
-    dominant-baseline="middle"
-    letter-spacing="6"
-    opacity="0.85"
-  >LONDON</text>
+  <!-- Lash strokes fanning outward -->
+  <line x1="136" y1="234" x2="104" y2="174" stroke="#E8722A" stroke-width="5" stroke-linecap="round"/>
+  <line x1="166" y1="221" x2="144" y2="158" stroke="#E8722A" stroke-width="5.5" stroke-linecap="round"/>
+  <line x1="204" y1="211" x2="192" y2="146" stroke="#E8722A" stroke-width="6" stroke-linecap="round"/>
+  <line x1="234" y1="205" x2="228" y2="138" stroke="#E8722A" stroke-width="6.5" stroke-linecap="round"/>
+  <line x1="256" y1="202" x2="256" y2="133" stroke="#E8722A" stroke-width="7" stroke-linecap="round"/>
+  <line x1="278" y1="205" x2="284" y2="138" stroke="#E8722A" stroke-width="6.5" stroke-linecap="round"/>
+  <line x1="308" y1="211" x2="320" y2="146" stroke="#E8722A" stroke-width="6" stroke-linecap="round"/>
+  <line x1="346" y1="221" x2="368" y2="158" stroke="#E8722A" stroke-width="5.5" stroke-linecap="round"/>
+  <line x1="376" y1="234" x2="408" y2="174" stroke="#E8722A" stroke-width="5" stroke-linecap="round"/>
 
-  <!-- Bottom accent line -->
-  <line x1="180" y1="435" x2="332" y2="435" stroke="#ffffff" stroke-width="1.5" opacity="0.5"/>
+  <!-- "lash" in orange -->
+  <text x="255" y="325"
+        font-family="'Palatino Linotype', Palatino, Georgia, 'Book Antiqua', serif"
+        font-size="96"
+        font-weight="400"
+        fill="#E8722A"
+        text-anchor="end"
+        letter-spacing="0">lash</text>
+
+  <!-- "zone" in dark charcoal -->
+  <text x="260" y="325"
+        font-family="'Palatino Linotype', Palatino, Georgia, 'Book Antiqua', serif"
+        font-size="96"
+        font-weight="700"
+        fill="#2B2B2B"
+        text-anchor="start"
+        letter-spacing="0">zone</text>
 </svg>
