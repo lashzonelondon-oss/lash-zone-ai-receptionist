@@ -117,6 +117,7 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
 </Response>"""
         return Response(content=twiml, media_type="application/xml")
 
+    call_context = None  # initialised before try so finally: can always reference it
     try:
         from ..ai.receptionist import CallContext
 
@@ -130,9 +131,6 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
 
         # generate_response signature: (call_context, user_message) -> str
         ai_response = await receptionist.generate_response(call_context, speech_result)
-
-        # Persist updated conversation history back to the session
-        session.transcript = call_context.conversation_history
 
         if not ai_response or not ai_response.strip():
             ai_response = "I'm so sorry, could you say that again for me?"
@@ -214,6 +212,18 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
     <Hangup/>
 </Response>"""
         return Response(content=fallback, media_type="application/xml")
+
+    finally:
+        # Always persist the transcript and outcome back to the voice_handler session
+        # so call_status can save them to the database even if an OpenAI error occurred.
+        try:
+            if call_context is not None:
+                session.transcript = call_context.conversation_history
+                outcome_val = getattr(getattr(call_context, "outcome", None), "value", None)
+                if call_sid in CALL_SESSIONS and outcome_val:
+                    CALL_SESSIONS[call_sid].setdefault("context_data", {})["outcome"] = outcome_val
+        except Exception:
+            pass  # Never let finally block errors suppress the original exception
 
 
 @app.post("/webhook/call-status")
