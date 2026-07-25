@@ -98,7 +98,9 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
     """
     form_data = await request.form()
     call_sid = form_data.get("CallSid", "")
-    caller_number = form_data.get("ForwardedFrom") or form_data.get("From", "unknown")
+    twilio_from = form_data.get("From", "")
+    twilio_forwarded_from = form_data.get("ForwardedFrom", "")
+    caller_number = twilio_from or twilio_forwarded_from or "unknown"
     speech_result = (form_data.get("SpeechResult") or "").strip()
     confidence = form_data.get("Confidence", "0")
 
@@ -145,6 +147,7 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
                 if wants and not already and caller_number not in ("unknown", ""):
                     booking_url = os.environ.get("BOOKING_URL", "")
                     if booking_url:
+                        print(f"[BG][SMS-DEBUG] From={twilio_from!r} ForwardedFrom={twilio_forwarded_from!r} sms_to={caller_number!r}")
                         sent_ok = voice_handler.send_sms(
                             to_number=caller_number,
                             message="Thank you for contacting Lash Zone London.\n\nTo view availability and make a booking, please visit:\nhttps://www.lashzonelondon.com\n\nWe look forward to seeing you."
