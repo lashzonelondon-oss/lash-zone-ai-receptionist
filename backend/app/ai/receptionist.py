@@ -76,6 +76,7 @@ class CallContext:
     preferred_callback_time: Optional[str] = None
     services_discussed: List[str] = field(default_factory=list)
     staff_followup_type: Optional[str] = None
+    send_booking_link_marker: bool = False
 
     def add_message(self, role: str, content: str):
         self.conversation_history.append({"role": "user" if role == "user" else "assistant", "content": content})
@@ -322,6 +323,11 @@ If a caller contacts outside of opening hours, let them know the studio is curre
 INTERNAL STAFF FOLLOW-UP MARKER (technical instruction — never mention this to the caller):
 Whenever you tell a caller that you will take a message, escalate their issue, or that the studio team will contact them — including for rescheduling, cancelling, running late, an appointment query needing staff, wanting to speak to the studio, a retention issue, a treatment concern, or a complaint/reaction/refund — end your reply with an exact hidden marker on its own, in this exact format: [[STAFF_FOLLOWUP:type]] where type is one of: reschedule, cancel, running_late, appointment_query, speak_to_studio, retention, complaint, reaction, refund, other.
 This marker is a technical signal only. It must never be read aloud, mentioned, or explained to the caller. Always phrase your spoken reply to the caller exactly as you normally would — the marker is appended silently after your natural sentence, never as part of what you say to them.
+
+INTERNAL BOOKING LINK MARKER (technical instruction — never mention this to the caller):
+Whenever you tell the caller that you will send them the booking link — whether you offer it yourself, or the caller agrees to receive it after you offered (for example if they simply say "yes please" after you asked to send it) — end your reply with an exact hidden marker on its own, in this exact format: [[SEND_BOOKING_LINK]]
+Only use this marker when a booking link genuinely should be sent now — do not add it out of habit, and do not add it in the same reply as a [[STAFF_FOLLOWUP:type]] marker unless sending the link is also genuinely correct for that reply. For example, do not send a booking link in the same reply where you are taking a message about a reschedule, cancellation, complaint, or other issue that needs staff follow-up instead of self-service booking.
+This marker is a technical signal only. It must never be read aloud, mentioned, or explained to the caller. Always phrase your spoken reply to the caller exactly as you normally would — the marker is appended silently after your natural sentence, never as part of what you say to them.
 """
 
 
@@ -437,6 +443,12 @@ class LashZoneReceptionist:
             call_context.staff_followup_type = _marker_match.group(1).lower()
             ai_response = re.sub(r'\s*\[\[STAFF_FOLLOWUP:\w+\]\]\s*', ' ', ai_response).strip()
 
+        # Same extraction/stripping point, for the booking-link marker.
+        _booking_link_match = re.search(r'\[\[SEND_BOOKING_LINK\]\]', ai_response)
+        if _booking_link_match:
+            call_context.send_booking_link_marker = True
+            ai_response = re.sub(r'\s*\[\[SEND_BOOKING_LINK\]\]\s*', ' ', ai_response).strip()
+
         # Ensure minimum sentences by adding a system hint if response is too short
         # Add to conversation history
         call_context.add_message("assistant", ai_response)
@@ -456,16 +468,24 @@ class LashZoneReceptionist:
         return any(keyword in message_lower for keyword in self.escalation_keywords)
 
     def _wants_booking_link(self, message: str) -> bool:
-        """Detect whether the caller is asking to book or to be sent the booking link."""
+        """Legacy, secondary fallback only. The primary signal is the AI's own
+        [[SEND_BOOKING_LINK]] marker (see generate_response()); this keyword
+        match is consulted only on a turn where the model emitted neither
+        that marker nor a [[STAFF_FOLLOWUP:type]] marker (see gather_response()
+        in routes.py). Deliberately uses explicit booking/link intent phrases
+        only — no bare "appointment", "booking", "book", "schedule", "reserve"
+        or "how much" — since those broad words also appear in unrelated
+        existing-client conversations (reschedule, cancel, complaints, etc.)
+        and would otherwise recreate false-positive booking-link SMS sends."""
         message_lower = message.lower()
         booking_phrases = [
             "send me a link", "send a link", "send me the link", "send the link",
-            "send me a text", "send me a message", "text me", "send it to me",
-            "send it over", "send that over", "send it across",
-            "book", "booking", "appointment", "reserve", "schedule",
-            "how do i book", "where do i book", "sign up", "make a booking",
-            "link to book", "booking link", "send me details", "send me info",
-            "price", "prices", "pricing", "how much", "cost",
+            "send it to me", "send it over", "send that over", "send it across",
+            "book an appointment", "book a treatment", "book a session",
+            "make a booking", "make an appointment", "can i book", "i want to book",
+            "i'd like to book", "how do i book", "where do i book",
+            "link to book", "booking link", "send me details about booking",
+            "check availability", "see availability",
         ]
         if any(phrase in message_lower for phrase in booking_phrases):
             return True

@@ -137,13 +137,33 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
         if not ai_response or not ai_response.strip():
             ai_response = "I'm so sorry, could you say that again for me?"
 
-        # Send SMS booking link in background (non-blocking)
+        # Send SMS booking link in background (non-blocking).
+        #
+        # PRIMARY signal: the AI's own [[SEND_BOOKING_LINK]] marker, extracted
+        # in receptionist.generate_response() into call_context.send_booking_link_marker.
+        # SECONDARY (legacy) signal: the keyword-based _wants_booking_link()
+        # check (call_context.needs_booking_link), consulted ONLY on a turn
+        # where the model emitted neither a booking-link marker nor a
+        # staff-followup marker — i.e. an otherwise unclassified turn. This
+        # prevents the legacy keyword match (e.g. "appointment", "booking")
+        # from overriding or duplicating a turn the model already classified
+        # as needing staff follow-up rather than a booking link.
+        _marker_wants_link = getattr(call_context, "send_booking_link_marker", False)
+        _marker_staff_followup_this_turn = getattr(call_context, "staff_followup_type", None)
+        _legacy_wants_link = getattr(call_context, "needs_booking_link", False)
+
         def _send_booking_sms_bg():
             try:
                 BOOKING_SMS_ENABLED = True
-                wants = BOOKING_SMS_ENABLED and getattr(call_context, "needs_booking_link", False)
+                if _marker_wants_link:
+                    wants = True
+                elif not _marker_staff_followup_this_turn:
+                    wants = BOOKING_SMS_ENABLED and _legacy_wants_link
+                else:
+                    wants = False
                 already = getattr(session, "booking_link_sent", False)
-                print(f"[BG] Booking-link check: needs={wants} already_sent={already}")
+                print(f"[BG] Booking-link check: marker={_marker_wants_link} legacy={_legacy_wants_link} "
+                      f"staff_followup_this_turn={_marker_staff_followup_this_turn} resolved={wants} already_sent={already}")
                 if wants and not already and caller_number not in ("unknown", ""):
                     booking_url = os.environ.get("BOOKING_URL", "")
                     if booking_url:
