@@ -5,6 +5,7 @@ Loads comprehensive system prompt from database/config
 
 import os
 import json
+import re
 import asyncio
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, field
@@ -74,6 +75,7 @@ class CallContext:
     followup_service: Optional[str] = None
     preferred_callback_time: Optional[str] = None
     services_discussed: List[str] = field(default_factory=list)
+    staff_followup_type: Optional[str] = None
 
     def add_message(self, role: str, content: str):
         self.conversation_history.append({"role": "user" if role == "user" else "assistant", "content": content})
@@ -298,6 +300,10 @@ If you are not completely confident in an answer, do not guess. Collect the call
 
 CALLS OUTSIDE OPENING HOURS:
 If a caller contacts outside of opening hours, let them know the studio is currently closed and give the relevant opening times. Encourage them to book or leave a message via the website at lash zone london dot com.
+
+INTERNAL STAFF FOLLOW-UP MARKER (technical instruction — never mention this to the caller):
+Whenever you tell a caller that you will take a message, escalate their issue, or that the studio team will contact them — including for rescheduling, cancelling, running late, an appointment query needing staff, wanting to speak to the studio, a retention issue, a treatment concern, or a complaint/reaction/refund — end your reply with an exact hidden marker on its own, in this exact format: [[STAFF_FOLLOWUP:type]] where type is one of: reschedule, cancel, running_late, appointment_query, speak_to_studio, retention, complaint, reaction, refund, other.
+This marker is a technical signal only. It must never be read aloud, mentioned, or explained to the caller. Always phrase your spoken reply to the caller exactly as you normally would — the marker is appended silently after your natural sentence, never as part of what you say to them.
 """
 
 
@@ -403,7 +409,15 @@ class LashZoneReceptionist:
             temperature=0.7
         )
 
-        ai_response = response.choices[0].message.content
+        ai_response = response.choices[0].message.content or ""
+
+        # Extract the hidden staff-follow-up marker (if present), then strip it
+        # completely before the text is spoken, texted, stored, or fed back to
+        # the model as prior context. The marker must never reach the caller.
+        _marker_match = re.search(r'\[\[STAFF_FOLLOWUP:(\w+)\]\]', ai_response)
+        if _marker_match:
+            call_context.staff_followup_type = _marker_match.group(1).lower()
+            ai_response = re.sub(r'\s*\[\[STAFF_FOLLOWUP:\w+\]\]\s*', ' ', ai_response).strip()
 
         # Ensure minimum sentences by adding a system hint if response is too short
         # Add to conversation history

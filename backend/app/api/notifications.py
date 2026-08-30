@@ -71,10 +71,17 @@ def send_followup_email(followup: Dict[str, Any]) -> bool:
         if request_type == "Not provided":
             request_type = "callback"
 
+        # Reflect urgency in the subject line itself (not just the body) so
+        # it's visible at a glance in an inbox list. Driven by the summary
+        # text the caller already set (e.g. prefixed "URGENT \u2014 ") rather than
+        # a new field, to avoid changing this function's existing signature.
+        is_urgent = str(followup.get("summary") or "").startswith("URGENT")
+        subject_prefix = "URGENT \u2014 " if is_urgent else ""
+
         payload = json.dumps({
             "from": RESEND_FROM,
             "to": [recipient],
-            "subject": f"New follow-up request from {name} \u2014 {request_type}",
+            "subject": f"{subject_prefix}New follow-up request from {name} \u2014 {request_type}",
             "text": _build_body(followup),
         }).encode("utf-8")
 

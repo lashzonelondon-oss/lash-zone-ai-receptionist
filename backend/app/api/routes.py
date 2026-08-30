@@ -160,39 +160,56 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
                 print(f"[BG] SMS booking link error: {repr(sms_err)}")
         background_tasks.add_task(_send_booking_sms_bg)
 
-        # Save follow-up to database and send email in background (non-blocking)
-        def _save_followup_bg():
-            try:
-                import asyncio
-                FOLLOWUP_ENABLED = True
-                wants_followup = FOLLOWUP_ENABLED and getattr(call_context, "needs_followup", False)
-                already_followup = getattr(session, "followup_saved", False)
-                print(f"[BG] Follow-up check: needs={wants_followup} already={already_followup}")
-                if wants_followup and not already_followup:
-                    session.followup_saved = True
-                    followup_record = {
-                        "caller_name": getattr(call_context.client_info, "name", None),
-                        "caller_phone": caller_number if caller_number not in ("unknown", "") else None,
-                        "summary": getattr(call_context, "followup_summary", None) or "Caller requested callback",
-                        "service_interest": getattr(call_context, "followup_service", None),
-                        "preferred_callback_time": getattr(call_context, "preferred_callback_time", None),
-                        "request_type": "callback",
-                        "call_sid": call_sid,
-                        "status": "pending",
-                        "email_sent": False,
-                    }
-                    # Run the async DB save in a new event loop for the background thread
-                    loop = asyncio.new_event_loop()
-                    try:
-                        saved = loop.run_until_complete(db.create_followup(followup_record))
-                        print(f"[BG] Follow-up saved to Supabase: {bool(saved)}")
-                        email_ok = send_followup_email(followup_record)
-                        print(f"[BG] Follow-up email result: {email_ok}")
-                    finally:
-                        loop.close()
-            except Exception as followup_err:
-                print(f"[BG] Follow-up handling error: {repr(followup_err)}")
-        background_tasks.add_task(_save_followup_bg)
+        # ------------------------------------------------------------------
+        # UNIFIED STAFF FOLLOW-UP ACCUMULATION (replaces per-turn notification)
+        #
+        # Primary signal: the hidden [[STAFF_FOLLOWUP:type]] marker extracted
+        # in receptionist.generate_response() (see call_context.staff_followup_type).
+        # Fallback signals (kept working, never removed): the legacy keyword
+        # detectors _wants_followup() (-> call_context.needs_followup) and
+        # _should_escalate() (-> call_context.escalation). If the model fails
+        # to emit a marker but a legacy detector fires, the call is still
+        # marked for staff follow-up rather than silently dropped.
+        #
+        # State accumulates on the long-lived CallSession (session), which
+        # persists across all turns of this call, and is read once by
+        # call_status() after the call ends to send exactly one notification
+        # using the highest-priority type seen during the whole call.
+        # ------------------------------------------------------------------
+        _STAFF_FOLLOWUP_PRIORITY = {
+            "reaction": 3, "complaint": 3, "refund": 2, "retention": 2,
+            "reschedule": 1, "cancel": 1, "running_late": 1,
+            "appointment_query": 1, "speak_to_studio": 1, "other": 1,
+        }
+
+        def _record_staff_followup(followup_type: Optional[str], source: str):
+            """Update the session's accumulated staff-follow-up state, keeping
+            whichever type/priority is highest across the whole call."""
+            if not followup_type:
+                return
+            rank = _STAFF_FOLLOWUP_PRIORITY.get(followup_type, 1)
+            if rank >= getattr(session, "staff_followup_priority", 0):
+                session.staff_followup_type = followup_type
+                session.staff_followup_priority = rank
+            print(f"[BG] Staff follow-up recorded (source={source}): type={followup_type} rank={rank} "
+                  f"-> session now type={session.staff_followup_type} priority={session.staff_followup_priority}")
+
+        # Primary: hidden marker parsed out of the AI's own reply.
+        _record_staff_followup(getattr(call_context, "staff_followup_type", None), source="marker")
+
+        # Fallback: legacy caller-wording detectors. These must keep working
+        # even if the model never emits a marker for this turn/call.
+        if getattr(call_context, "needs_followup", False):
+            _record_staff_followup("other", source="legacy_needs_followup")
+        if getattr(call_context, "escalation", None) is not None:
+            _record_staff_followup("complaint", source="legacy_escalation")
+
+        # NOTE: the previous mid-call _save_followup_bg() (which saved a
+        # follow_ups row and sent an email on the very first matching turn)
+        # has been removed. Its job is now done once, at call completion, by
+        # call_status() below — using the accumulated highest-priority state
+        # captured above — so the same call can no longer generate more than
+        # one staff notification.
 
         # Decide whether the call should end
         outcome = getattr(call_context, "outcome", None)
@@ -280,6 +297,68 @@ async def call_status(request: Request):
                 })
             except Exception as email_err:
                 print(f"Transcript email error (non-fatal): {repr(email_err)}")
+
+            # ------------------------------------------------------------
+            # UNIFIED STAFF FOLLOW-UP: single notification per call, sent
+            # once here at call completion, using the highest-priority
+            # type accumulated during the call (see gather_response()).
+            # Wrapped so it can never affect call logging above.
+            # ------------------------------------------------------------
+            try:
+                followup_type = getattr(vh_session, "staff_followup_type", None) if vh_session else None
+                if followup_type:
+                    priority_rank = getattr(vh_session, "staff_followup_priority", 1)
+                    is_urgent = priority_rank >= 2
+
+                    # Resolved Twilio caller number for this call. If it was
+                    # genuinely never available (e.g. withheld caller ID),
+                    # store/render "unknown" rather than inventing a number.
+                    resolved_phone = session["caller_number"] if session["caller_number"] not in ("unknown", "", None) else "unknown"
+
+                    # Build a concise, human-useful summary from the actual
+                    # conversation already collected for this call — no
+                    # additional OpenAI call. Use the caller's own turns,
+                    # since that is where the reason for contact lives.
+                    caller_lines = [
+                        (m.get("content") or "").strip()
+                        for m in (transcript or [])
+                        if m.get("role") == "user" and (m.get("content") or "").strip()
+                    ]
+                    if caller_lines:
+                        # Most calls are short; a couple of the caller's own
+                        # lines is normally enough context for staff without
+                        # dumping the entire transcript into the summary.
+                        context_snippet = " / ".join(caller_lines[:3])
+                        if len(context_snippet) > 400:
+                            context_snippet = context_snippet[:400].rstrip() + "..."
+                    else:
+                        context_snippet = "(no further detail captured in this call)"
+
+                    type_label = followup_type.replace("_", " ")
+                    summary = (
+                        f"{'URGENT — ' if is_urgent else ''}Staff follow-up needed ({type_label}). "
+                        f"Caller said: {context_snippet}"
+                    )
+
+                    followup_record = {
+                        "caller_name": None,  # not reliably captured anywhere in the current call flow
+                        "caller_phone": resolved_phone,
+                        "summary": summary,
+                        "service_interest": None,
+                        "preferred_callback_time": None,
+                        "request_type": followup_type,
+                        "call_sid": call_sid,
+                        "status": "pending",
+                        "email_sent": False,
+                    }
+
+                    saved = await db.create_followup(followup_record)
+                    print(f"Staff follow-up saved to Supabase: {bool(saved)} (type={followup_type}, urgent={is_urgent})")
+
+                    email_ok = send_followup_email(followup_record)
+                    print(f"Staff follow-up email result: {email_ok}")
+            except Exception as staff_followup_err:
+                print(f"Staff follow-up notification error (non-fatal): {repr(staff_followup_err)}")
 
             # Clean up session
             del CALL_SESSIONS[call_sid]

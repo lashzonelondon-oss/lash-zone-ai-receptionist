@@ -18,6 +18,11 @@ class CallSession:
         self.start_time = datetime.now()
         self.transcript = []
         self.is_active = True
+        # Accumulated staff-follow-up state for this call (unified mechanism).
+        # Updated turn-by-turn in gather_response(); read once in call_status()
+        # to send a single, highest-priority notification after the call ends.
+        self.staff_followup_type: Optional[str] = None
+        self.staff_followup_priority: int = 0
 
 
 class TwilioVoiceHandler:
