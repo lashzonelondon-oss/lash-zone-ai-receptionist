@@ -210,9 +210,9 @@ Instagram: @lashstudio_london
 
 OPENING HOURS:
 Monday: 11:00 to 18:00
-Tuesday: 12:00 to 20:30
-Wednesday: 13:00 to 20:30
-Thursday: 13:00 to 20:30
+Tuesday: 11:00 to 18:00
+Wednesday: 11:00 to 18:00
+Thursday: 11:00 to 18:00
 Friday: 10:00 to 18:00
 Saturday: 10:00 to 17:00
 Sunday: Closed
