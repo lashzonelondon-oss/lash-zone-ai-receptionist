@@ -8,6 +8,12 @@ can never affect a live phone call.
 Required environment variables:
     RESEND_API_KEY     - API key from resend.com
     FOLLOWUP_EMAIL_TO  - recipient inbox for follow-up notifications
+Optional environment variables:
+    RESEND_FROM        - verified sender, e.g. "Name <mail@yourdomain.com>".
+                         Defaults to Resend's sandbox sender
+                         (onboarding@resend.dev), which can only deliver to
+                         the Resend account owner's own address and returns
+                         HTTP 403 for any other recipient.
 """
 
 import os
@@ -18,7 +24,10 @@ from datetime import datetime
 from typing import Dict, Any
 
 RESEND_API_URL = "https://api.resend.com/emails"
-RESEND_FROM = "Lash Zone Receptionist <onboarding@resend.dev>"
+RESEND_FROM = os.environ.get(
+    "RESEND_FROM",
+    "Lash Zone Receptionist <onboarding@resend.dev>",
+)
 
 def _val(data: Dict[str, Any], key: str) -> str:
     """Return a human-friendly value, or 'Not provided' when missing/empty."""
