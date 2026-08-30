@@ -6,6 +6,7 @@ Loads comprehensive system prompt from database/config
 import os
 import json
 import re
+import difflib
 import asyncio
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, field
@@ -101,6 +102,92 @@ class CallContext:
             "outcome": self.outcome.value if self.outcome else None,
             "services_discussed": self.services_discussed
         })
+
+
+# ---------------------------------------------------------------------------
+# Booking-link offer/acceptance helpers (module-level, no state of their own).
+#
+# Background: Twilio speech recognition regularly mangles the short reply a
+# caller gives when accepting an offer of the booking link. A real production
+# call transcribed "Yes please" as "Hi Jess please" at 0.50 confidence; the
+# model therefore emitted no [[SEND_BOOKING_LINK]] marker and the (deliberately
+# narrow) keyword fallback did not match either, so no SMS was sent.
+#
+# These two helpers add a THIRD, tightly-scoped signal: if the AI's own reply
+# offered the link, then a short affirmative on the NEXT caller turn counts as
+# acceptance. The marker remains the primary signal and the legacy keyword list
+# is NOT broadened.
+# ---------------------------------------------------------------------------
+
+# Matches the AI offering to send the booking link. Runs against the AI's own
+# generated text, which is clean (never ASR-degraded), so it can be strict.
+_BOOKING_OFFER_RE = re.compile(
+    r"\bsend\s+(?:you\s+|it\s+|that\s+|over\s+)?"
+    r"(?:the\s+|a\s+|you\s+the\s+)?(?:booking\s+)?(?:link|details)\b",
+    re.IGNORECASE,
+)
+
+# Short, unambiguous acceptances. Checked first, exactly.
+_AFFIRMATIVE_EXACT = frozenset({
+    "yes", "yeah", "yep", "yup", "ya", "ok", "okay", "sure", "please", "pls",
+    "definitely", "absolutely", "lovely", "perfect", "brilliant", "great",
+    "fine", "alright",
+})
+
+# Only these are fuzzy-matched, to absorb ASR noise ("yess", "yah").
+_AFFIRMATIVE_FUZZY = frozenset({"yes", "yeah", "yep", "yup", "okay", "sure", "please"})
+
+# Any of these anywhere in a short reply means it is NOT an acceptance.
+_NEGATIVE_TOKENS = frozenset({
+    "no", "not", "dont", "nope", "nah", "later", "stop", "cancel", "rather",
+    "never", "wait", "hold",
+})
+
+# Common words excluded from fuzzy matching; without this, "you" scores 0.67
+# against "yup" and "Thank you" would be read as an acceptance.
+_FUZZY_STOPWORDS = frozenset({
+    "you", "your", "the", "a", "to", "is", "it", "and", "my", "i", "im",
+    "that", "this", "for", "of", "do", "can", "we",
+})
+
+_MAX_ACCEPTANCE_TOKENS = 6
+_FUZZY_THRESHOLD = 0.75
+
+
+def offers_booking_link(ai_response: str) -> bool:
+    """True when the AI's reply offers to send the caller the booking link."""
+    if not ai_response:
+        return False
+    return bool(_BOOKING_OFFER_RE.search(ai_response))
+
+
+def is_affirmative_reply(message: str) -> bool:
+    """True when a SHORT caller utterance reads as acceptance.
+
+    Deliberately conservative, and only ever consulted on the single turn
+    after the AI offered the link (see gather_response in routes.py):
+      - utterances longer than 6 tokens are rejected outright, which excludes
+        complaints, reschedule requests and other substantive turns;
+      - any negative token rejects the whole utterance;
+      - fuzzy matching applies only to short non-stopword tokens at a 0.75
+        similarity threshold.
+    """
+    if not message:
+        return False
+    tokens = re.findall(r"[a-z]+", message.lower())
+    if not tokens or len(tokens) > _MAX_ACCEPTANCE_TOKENS:
+        return False
+    if any(t in _NEGATIVE_TOKENS for t in tokens):
+        return False
+    if any(t in _AFFIRMATIVE_EXACT for t in tokens):
+        return True
+    for token in tokens:
+        if len(token) > 5 or token in _FUZZY_STOPWORDS:
+            continue
+        for candidate in _AFFIRMATIVE_FUZZY:
+            if difflib.SequenceMatcher(None, token, candidate).ratio() >= _FUZZY_THRESHOLD:
+                return True
+    return False
 
 
 # Embedded luxury system prompt

@@ -23,6 +23,11 @@ class CallSession:
         # to send a single, highest-priority notification after the call ends.
         self.staff_followup_type: Optional[str] = None
         self.staff_followup_priority: int = 0
+        # True for exactly one turn after the AI has offered to send the
+        # booking link, so that a short affirmative reply on the NEXT turn
+        # ("yes please") can be treated as acceptance even when Twilio's
+        # speech recognition garbles it. Set and consumed in gather_response().
+        self.booking_link_offer_pending: bool = False
 
 
 class TwilioVoiceHandler:

@@ -20,7 +20,13 @@ from pydantic import BaseModel
 import uvicorn
 
 # Import our modules
-from ..ai.receptionist import receptionist, CallContext, CallOutcome
+from ..ai.receptionist import (
+    receptionist,
+    CallContext,
+    CallOutcome,
+    offers_booking_link,
+    is_affirmative_reply,
+)
 from ..database.supabase_client import db
 from ..voice_handler import voice_handler
 from .notifications import send_followup_email, send_call_transcript_email
@@ -131,6 +137,10 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
             conversation_history=list(session.transcript),
         )
 
+        # Was the AI's PREVIOUS reply an offer to send the booking link? Read
+        # (and below, consumed) before this turn's reply overwrites it.
+        _offer_was_pending = getattr(session, "booking_link_offer_pending", False)
+
         # generate_response signature: (call_context, user_message) -> str
         ai_response = await receptionist.generate_response(call_context, speech_result)
 
@@ -152,17 +162,40 @@ async def gather_response(request: Request, background_tasks: BackgroundTasks):
         _marker_staff_followup_this_turn = getattr(call_context, "staff_followup_type", None)
         _legacy_wants_link = getattr(call_context, "needs_booking_link", False)
 
+        # THIRD signal: the caller accepted an offer made on the previous turn.
+        # Only live for the single turn after an offer, only for short
+        # affirmative utterances, and never on a turn the model classified as
+        # needing staff follow-up. Exists because Twilio ASR mangles the short
+        # acceptance ("Yes please" -> "Hi Jess please"), which defeats both the
+        # marker and the deliberately narrow keyword fallback.
+        _accepted_offer = bool(
+            _offer_was_pending
+            and not _marker_staff_followup_this_turn
+            and is_affirmative_reply(speech_result)
+        )
+
+        # Consume the pending flag, then re-arm it only if THIS reply offers
+        # the link again. One turn of memory, never more.
+        session.booking_link_offer_pending = offers_booking_link(ai_response)
+        print(
+            f"[BG] Booking-offer state: was_pending={_offer_was_pending} "
+            f"accepted={_accepted_offer} now_pending={session.booking_link_offer_pending}"
+        )
+
         def _send_booking_sms_bg():
             try:
                 BOOKING_SMS_ENABLED = True
                 if _marker_wants_link:
+                    wants = True
+                elif _accepted_offer:
                     wants = True
                 elif not _marker_staff_followup_this_turn:
                     wants = BOOKING_SMS_ENABLED and _legacy_wants_link
                 else:
                     wants = False
                 already = getattr(session, "booking_link_sent", False)
-                print(f"[BG] Booking-link check: marker={_marker_wants_link} legacy={_legacy_wants_link} "
+                print(f"[BG] Booking-link check: marker={_marker_wants_link} accepted_offer={_accepted_offer} "
+                      f"legacy={_legacy_wants_link} "
                       f"staff_followup_this_turn={_marker_staff_followup_this_turn} resolved={wants} already_sent={already}")
                 if wants and not already and caller_number not in ("unknown", ""):
                     booking_url = os.environ.get("BOOKING_URL", "")
