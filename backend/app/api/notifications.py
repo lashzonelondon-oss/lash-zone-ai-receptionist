@@ -17,6 +17,7 @@ Optional environment variables:
 """
 
 import os
+import re
 import json
 import urllib.request
 import urllib.error
@@ -28,6 +29,45 @@ RESEND_FROM = os.environ.get(
     "RESEND_FROM",
     "Lash Zone Receptionist <onboarding@resend.dev>",
 )
+
+# Maximum number of characters of a provider error body written to the logs.
+_ERROR_BODY_MAX_CHARS = 500
+
+
+def _safe_error_body(err: urllib.error.HTTPError) -> str:
+    """
+    Read, sanitise and truncate the response body of a failed HTTP request so
+    it can be logged for diagnosis. Never raises. Defensively redacts anything
+    that looks like an API key or bearer token.
+    """
+    try:
+        raw = err.read(_ERROR_BODY_MAX_CHARS * 4)
+        text = raw.decode("utf-8", errors="replace")
+    except Exception:
+        return "<unreadable>"
+
+    text = re.sub(r"re_[A-Za-z0-9_\-]{8,}", "[REDACTED]", text)
+    text = re.sub(r"(?i)bearer\s+\S+", "Bearer [REDACTED]", text)
+    text = " ".join(text.split())
+
+    if len(text) > _ERROR_BODY_MAX_CHARS:
+        text = text[:_ERROR_BODY_MAX_CHARS] + "...[truncated]"
+    return text or "<empty>"
+
+
+def _log_http_failure(func_name: str, err: urllib.error.HTTPError) -> None:
+    """
+    Log the HTTP status, endpoint and provider error body for a failed Resend
+    request, tagged with the calling function. Never raises. Does not log the
+    API key, request headers or the email content.
+    """
+    try:
+        print(
+            f"{func_name} HTTP failure: status={err.code} "
+            f"endpoint={RESEND_API_URL} body={_safe_error_body(err)}"
+        )
+    except Exception:
+        pass
 
 def _val(data: Dict[str, Any], key: str) -> str:
     """Return a human-friendly value, or 'Not provided' when missing/empty."""
@@ -108,6 +148,10 @@ def send_followup_email(followup: Dict[str, Any]) -> bool:
             print(f"Follow-up email sent to {recipient} (status {resp.status})")
             return True
 
+    except urllib.error.HTTPError as e:
+        print(f"Follow-up email error: {repr(e)}")
+        _log_http_failure("send_followup_email", e)
+        return False
     except Exception as e:
         print(f"Follow-up email error: {repr(e)}")
         return False
@@ -196,6 +240,10 @@ def send_call_transcript_email(call_data: Dict[str, Any]) -> bool:
             print(f"TRANSCRIPT_EMAIL_BODY_END")
             return True
 
+    except urllib.error.HTTPError as e:
+        print(f"Transcript email error: {repr(e)}")
+        _log_http_failure("send_call_transcript_email", e)
+        return False
     except Exception as e:
         print(f"Transcript email error: {repr(e)}")
         return False
