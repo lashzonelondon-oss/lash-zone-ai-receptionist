@@ -29,7 +29,6 @@ from ..ai.receptionist import (
 )
 from ..database.supabase_client import db
 from ..voice_handler import voice_handler
-from .notifications import send_followup_email, send_call_transcript_email
 
 # Create FastAPI app
 app = FastAPI(
@@ -339,22 +338,13 @@ async def call_status(request: Request):
 
             print(f"✅ Call logged to database: {session['caller_number']}, duration: {duration}s, outcome: {outcome}")
 
-            # Send transcript email (wrapped so it can never affect call logging)
-            try:
-                send_call_transcript_email({
-                    "caller_number": session["caller_number"],
-                    "duration_seconds": duration,
-                    "outcome": outcome,
-                    "transcript": transcript,
-                    "created_at": session["start_time"].isoformat(),
-                })
-            except Exception as email_err:
-                print(f"Transcript email error (non-fatal): {repr(email_err)}")
+            # Email notifications (Resend) are disabled: no transcript email is sent.
 
             # ------------------------------------------------------------
             # UNIFIED STAFF FOLLOW-UP: single notification per call, sent
             # once here at call completion, using the highest-priority
             # type accumulated during the call (see gather_response()).
+            # Saved to Supabase only; the email notification is disabled.
             # Wrapped so it can never affect call logging above.
             # ------------------------------------------------------------
             try:
@@ -407,9 +397,6 @@ async def call_status(request: Request):
 
                     saved = await db.create_followup(followup_record)
                     print(f"Staff follow-up saved to Supabase: {bool(saved)} (type={followup_type}, urgent={is_urgent})")
-
-                    email_ok = send_followup_email(followup_record)
-                    print(f"Staff follow-up email result: {email_ok}")
             except Exception as staff_followup_err:
                 print(f"Staff follow-up notification error (non-fatal): {repr(staff_followup_err)}")
 
