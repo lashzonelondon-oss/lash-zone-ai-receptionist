@@ -140,6 +140,7 @@ def send_followup_email(followup: Dict[str, Any]) -> bool:
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": "lash-zone-receptionist/1.0",
             },
             method="POST",
         )
@@ -229,6 +230,7 @@ def send_call_transcript_email(call_data: Dict[str, Any]) -> bool:
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": "lash-zone-receptionist/1.0",
             },
             method="POST",
         )
