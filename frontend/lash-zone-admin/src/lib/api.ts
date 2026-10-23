@@ -10,15 +10,36 @@ interface ApiResponse<T> {
   error?: string;
 }
 
+const ADMIN_KEY_STORAGE = 'lz_admin_key';
+function getAdminKey(): string {
+  try { return localStorage.getItem(ADMIN_KEY_STORAGE) || ''; } catch { return ''; }
+}
+
 async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<ApiResponse<T>> {
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const keyUsed = getAdminKey();
+    const send = () => fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        ...(getAdminKey() ? { Authorization: `Bearer ${getAdminKey()}` } : {}),
         ...options?.headers,
       },
     });
+    let response = await send();
+    if (response.status === 401) {
+      // Several requests load at once: if another one has already stored a new key, just retry.
+      // Otherwise ask for the admin key once; it is kept in this browser only, never in the build.
+      if (getAdminKey() && getAdminKey() !== keyUsed) {
+        response = await send();
+      } else {
+        const entered = window.prompt('Admin key required');
+        if (entered) {
+          try { localStorage.setItem(ADMIN_KEY_STORAGE, entered.trim()); } catch { /* ignore */ }
+          response = await send();
+        }
+      }
+    }
 
     const data = await response.json();
 
