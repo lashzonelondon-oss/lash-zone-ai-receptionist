@@ -4,6 +4,7 @@ Handles Twilio webhooks, API endpoints, and WebSocket for real-time voice
 """
 
 import os
+import hmac
 import asyncio
 import json
 import base64
@@ -34,8 +35,30 @@ from ..voice_handler import voice_handler
 app = FastAPI(
     title="Lash Zone London AI Receptionist",
     description="24/7 AI-powered phone receptionist for beauty studio",
-    version="1.0.0"
+    version="1.0.0",
+    # Public API docs / schema disabled: they list every route to anyone.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
+
+# Admin API authentication - protects /api/* ONLY (the dashboard and any API client).
+# Twilio webhooks (/webhook/*), /health and the /ws/voice WebSocket are deliberately NOT
+# covered: Twilio cannot send this key. Enforced only when ADMIN_API_KEY is set, so
+# deploying this code changes nothing until the variable is added in Railway.
+# Registered BEFORE CORSMiddleware so CORS stays outermost: browser preflight (OPTIONS)
+# is answered by CORS, and 401 responses still carry CORS headers.
+@app.middleware("http")
+async def require_admin_key(request: Request, call_next):
+    if request.url.path.startswith("/api/") and request.method != "OPTIONS":
+        expected = os.environ.get("ADMIN_API_KEY", "")
+        if expected:
+            auth = request.headers.get("authorization", "")
+            supplied = auth[7:] if auth.lower().startswith("bearer ") else ""
+            if not hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+    return await call_next(request)
+
 
 # CORS middleware
 app.add_middleware(
